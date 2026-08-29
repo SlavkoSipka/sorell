@@ -47,7 +47,9 @@ export default function PrijavaForm() {
 
     if (!isSupabaseBrowserConfigured()) {
       setError(
-        'Sajt nije povezan sa bazom. Popuni NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY u .env.local i restartuj server.',
+        // NEXT_PUBLIC_* se ugrađuju pri build-u, pa na hostingu ne pomaže
+        // dodavanje varijabli bez novog deploy-a.
+        'Sajt nije povezan sa bazom: nedostaju NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY. Lokalno ih upiši u .env.local i restartuj server, a na hostingu ih dodaj među environment varijable i pokreni novi deploy.',
       );
       return;
     }
