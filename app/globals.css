@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/*
+  Paleta je namerno „blank": bela podloga, tamno mastilo i jedan topli akcenat.
+  Menjaš brend? Dovoljno je da promeniš vrednosti ovde — ceo sajt prati.
+*/
+@theme inline {
+  --color-canvas: #FFFFFF;
+  --color-surface: #FAF9F7;
+  --color-surface-2: #F3F1ED;
+  --color-line: #E7E4DF;
+  --color-line-strong: #D5D1CA;
+  --color-ink: #171614;
+  --color-ink-soft: #4B4843;
+  --color-muted: #8C8880;
+  --color-accent: #B08E6A;
+  --color-accent-soft: #F5EEE6;
+  --color-danger: #9B2C2C;
+
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+
+  --radius-card: 4px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--color-ink);
+  background-color: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ── Prelaz između stranica ── */
+@keyframes page-content-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.page-transition-root {
+  animation: page-content-in 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-root { animation: none; }
+}
+
+/* ── Scroll reveal (vidljivo bez JS-a) ── */
+[data-reveal] {
+  transition: opacity 600ms ease-out, transform 600ms ease-out;
+}
+
+.js-reveal-ready [data-reveal]:not(.revealed) {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+[data-reveal].revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal],
+  .js-reveal-ready [data-reveal]:not(.revealed) {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none;
+  }
+}
+
+/* ── Traka sa obaveštenjem ── */
+@keyframes announcement-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.announcement-marquee-track {
+  width: max-content;
+  animation: announcement-marquee 38s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-marquee-track {
+    animation: none;
+    width: 100%;
+    justify-content: center;
+  }
+  .announcement-marquee-duplicate { display: none; }
+}
+
+/* ── Podvučeni link ── */
+.link-underline {
+  position: relative;
+  text-decoration: none;
+}
+
+.link-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background-color: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 200ms ease;
+}
+
+.link-underline:hover::after {
+  transform: scaleX(1);
+}
+
+/* ── Placeholder za slike koje se tek dodaju ── */
+.image-placeholder {
+  background-color: var(--color-surface-2);
+  background-image:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.025) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0, 0, 0, 0.025) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.025) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0, 0, 0, 0.025) 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Brojevna polja bez strelica */
+.input-no-spinner[type='number']::-webkit-inner-spin-button,
+.input-no-spinner[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.input-no-spinner[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
