@@ -10,15 +10,18 @@ import type { Product } from '@/lib/data/products';
 export default function ProductCard({
   product,
   image = '',
+  reveal = true,
 }: {
   product: Product;
   image?: string;
+  /** false unutar vodoravne trake — tamo se otkriva ceo red odjednom. */
+  reveal?: boolean;
 }) {
   const href = `/proizvodi/${product.slug}`;
   const title = product.shade ? `${product.name} — ${product.shade}` : product.name;
 
   return (
-    <article className="group flex flex-col" data-reveal="true">
+    <article className="group flex h-full flex-col" data-reveal={reveal ? 'true' : undefined}>
       <Link href={href} className="block">
         <Media
           src={image}

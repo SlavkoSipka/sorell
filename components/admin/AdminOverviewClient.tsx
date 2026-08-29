@@ -46,7 +46,7 @@ export default function AdminOverviewClient({
           <Link
             href="/admin/proizvodi"
             prefetch
-            className="font-body text-[12px] text-muted underline underline-offset-4 hover:text-ink"
+            className="inline-flex min-h-[40px] items-center font-body text-[14px] text-muted underline underline-offset-4 hover:text-ink"
           >
             Uredi proizvode
           </Link>
@@ -58,13 +58,13 @@ export default function AdminOverviewClient({
           <CatalogRow label="Na početnoj" value={katalog.naPocetnoj} />
         </ul>
         {katalog.naPocetnoj === 0 ? (
-          <p className="mt-4 font-body text-[12px] leading-relaxed text-muted">
+          <p className="mt-4 font-body text-[14px] leading-relaxed text-muted">
             Nijedan proizvod nije izdvojen za početnu stranu — tamo se za sada prikazuje početak
             kataloga. Označi {'„Na početnoj"'} kod proizvoda koje želiš da izdvojiš.
           </p>
         ) : null}
         {katalog.iskljuceno > 0 ? (
-          <p className="mt-2 font-body text-[12px] text-muted">
+          <p className="mt-2 font-body text-[14px] text-muted">
             {katalog.iskljuceno} proizvod(a) je skinuto sa sajta.
           </p>
         ) : null}
@@ -98,7 +98,7 @@ export default function AdminOverviewClient({
                 <li key={i} className="flex items-center justify-between gap-3 border-b border-line py-2.5">
                   <div className="min-w-0">
                     <p className="truncate font-body text-[13px] text-ink">{o.name}</p>
-                    <p className="font-body text-[11px] tabular-nums text-muted">
+                    <p className="font-body text-[13px] tabular-nums text-muted">
                       {new Date(o.createdAt).toLocaleString('sr-RS', {
                         dateStyle: 'short',
                         timeStyle: 'short',
@@ -116,7 +116,7 @@ export default function AdminOverviewClient({
           <Link
             href="/admin/porudzbine"
             prefetch
-            className="mt-5 inline-flex rounded-card border border-ink bg-ink px-5 py-2.5 font-body text-[11px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
+            className="mt-5 inline-flex min-h-[44px] items-center justify-center rounded-card border border-ink bg-ink px-5 font-body text-[12px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
           >
             Sve porudžbine
           </Link>
@@ -142,9 +142,9 @@ function CatalogRow({ label, value, warn = false }: { label: string; value: numb
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="border border-line bg-canvas p-4 md:p-5">
-      <p className="font-body text-[9px] uppercase tracking-[0.14em] text-muted md:text-[10px]">{label}</p>
+      <p className="font-body text-[10px] uppercase leading-tight tracking-[0.12em] text-muted md:text-[11px]">{label}</p>
       <p className="mt-2 font-display text-[20px] tabular-nums text-ink md:text-[26px]">{value}</p>
-      {hint ? <p className="mt-1 font-body text-[11px] text-muted">{hint}</p> : null}
+      {hint ? <p className="mt-1 font-body text-[12px] text-muted">{hint}</p> : null}
     </div>
   );
 }

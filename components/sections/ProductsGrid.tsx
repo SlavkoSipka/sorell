@@ -1,7 +1,14 @@
 import Link from 'next/link';
 import ProductCard from '@/components/ui/ProductCard';
-import { products, productsByCategory } from '@/lib/data/products';
-import { getProductOverrides, resolveImage } from '@/lib/products-server';
+import ProductCarousel from '@/components/sections/ProductCarousel';
+import ProductsBrowser from '@/components/sections/ProductsBrowser';
+import { products, type Product } from '@/lib/data/products';
+import {
+  getProductOverrides,
+  groupByCategory,
+  mergeProduct,
+  resolveImage,
+} from '@/lib/products-server';
 
 export default async function ProductsGrid({
   title = 'Proizvodi',
@@ -16,6 +23,7 @@ export default async function ProductsGrid({
    */
   featuredOnly = false,
 }: {
+  /** Prazno = sekcija ide bez naslova (stranica iznad već ima svoj). */
   title?: string;
   intro?: string;
   limit?: number;
@@ -33,56 +41,75 @@ export default async function ProductsGrid({
 
   if (list.length === 0) return null;
 
-  const groups = grouped ? productsByCategory(list) : [{ slug: '', label: '', items: list }];
+  const groups = grouped ? groupByCategory(list, overrides) : [{ slug: '', label: '', items: list }];
+
+  const row = (group: { slug: string; label: string; items: Product[] }) => (
+    <div id={group.slug || undefined} data-reveal="true">
+      {group.label ? (
+        <div className="mb-6 border-b border-line pb-3 md:mb-10 md:pb-4">
+          <h3 className="font-display text-[22px] text-ink md:text-[26px]">{group.label}</h3>
+          <p className="mt-1 font-body text-[12px] text-muted">
+            <span className="uppercase tracking-[0.14em]">
+              {group.items.length} {group.items.length === 1 ? 'proizvod' : 'proizvoda'}
+            </span>
+            <span className="px-2">·</span>
+            <span>Pakovanja: {mergeProduct(group.items[0], overrides).packagesLabel}</span>
+          </p>
+        </div>
+      ) : null}
+
+      <ProductCarousel>
+        {group.items.map((product) => (
+          <ProductCard
+            key={product.slug}
+            product={mergeProduct(product, overrides)}
+            image={resolveImage(product.slug, overrides)}
+            reveal={false}
+          />
+        ))}
+      </ProductCarousel>
+    </div>
+  );
+
+  const hasHeader = Boolean(title) || Boolean(intro) || showAllLink;
 
   return (
     <section id="proizvodi" className="border-b border-line">
       <div className="mx-auto max-w-[1200px] px-5 py-14 md:px-8 md:py-20">
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-4 md:mb-12">
-          <div>
-            <h2 className="font-display text-[28px] text-ink md:text-[34px]">{title}</h2>
-            {intro ? (
-              <p className="mt-2 max-w-[520px] font-body text-[14px] leading-relaxed text-ink-soft">
-                {intro}
-              </p>
-            ) : null}
-          </div>
-          {showAllLink ? (
-            <Link
-              href="/proizvodi"
-              className="link-underline font-body text-[11px] uppercase tracking-[0.14em] text-ink-soft hover:text-ink"
-            >
-              Svi proizvodi
-            </Link>
-          ) : null}
-        </div>
-
-        {groups.map((group, i) => (
-          <div key={group.slug || 'all'} id={group.slug || undefined} className={i > 0 ? 'mt-16 md:mt-24' : ''}>
-            {group.label ? (
-              <div className="mb-8 border-b border-line pb-4 md:mb-10">
-                <h3 className="font-display text-[22px] text-ink md:text-[26px]">{group.label}</h3>
-                <p className="mt-1 font-body text-[12px] text-muted">
-                  <span className="uppercase tracking-[0.14em]">
-                    {group.items.length} {group.items.length === 1 ? 'proizvod' : 'proizvoda'}
-                  </span>
-                  <span className="px-2">·</span>
-                  <span>Pakovanja: {group.items[0].packagesLabel}</span>
+        {hasHeader ? (
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4 md:mb-12">
+            <div>
+              {title ? (
+                <h2 className="font-display text-[28px] text-ink md:text-[34px]">{title}</h2>
+              ) : null}
+              {intro ? (
+                <p className="mt-2 max-w-[520px] font-body text-[14px] leading-relaxed text-ink-soft">
+                  {intro}
                 </p>
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-2 gap-x-5 gap-y-12 md:grid-cols-4 md:gap-x-8">
-              {group.items.map((product) => (
-                <ProductCard
-                  key={product.slug}
-                  product={product}
-                  image={resolveImage(product.slug, overrides)}
-                />
-              ))}
+              ) : null}
             </div>
+            {showAllLink ? (
+              <Link
+                href="/proizvodi"
+                className="link-underline font-body text-[11px] uppercase tracking-[0.14em] text-ink-soft hover:text-ink"
+              >
+                Svi proizvodi
+              </Link>
+            ) : null}
           </div>
-        ))}
+        ) : null}
+
+        {grouped ? (
+          <ProductsBrowser
+            groups={groups.map((g) => ({ slug: g.slug, label: g.label, count: g.items.length }))}
+          >
+            {groups.map((group) => (
+              <div key={group.slug}>{row(group)}</div>
+            ))}
+          </ProductsBrowser>
+        ) : (
+          row(groups[0])
+        )}
       </div>
     </section>
   );

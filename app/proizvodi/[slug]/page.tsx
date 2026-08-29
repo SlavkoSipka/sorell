@@ -6,7 +6,14 @@ import Media from '@/components/ui/Media';
 import { ProductFromPrice } from '@/components/product/ProductPrice';
 import VariantPicker from '@/components/product/VariantPicker';
 import { getProductBySlug, products } from '@/lib/data/products';
-import { getProductOverrides, resolveImage } from '@/lib/products-server';
+import ProductGallery from '@/components/product/ProductGallery';
+import {
+  categorySlugOf,
+  getProductOverrides,
+  mergeProduct,
+  resolveImage,
+  resolveImages,
+} from '@/lib/products-server';
 import {
   FREE_SHIPPING_THRESHOLD_LABEL,
   PICKUP_LABEL,
@@ -39,17 +46,26 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ProductPage({ params }: Params) {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
-  if (!product) notFound();
+  const catalogProduct = getProductBySlug(slug);
+  if (!catalogProduct) notFound();
 
   const overrides = await getProductOverrides();
+  // Naziv, nijansa i opisi dolaze iz admina kad su tamo uneti.
+  const product = mergeProduct(catalogProduct, overrides);
   const isAvailable = !overrides.inactiveSlugs.has(product.slug);
-  const image = resolveImage(product.slug, overrides);
+  const images = resolveImages(product.slug, overrides);
+  // Korpa nosi jednu sličicu — uvek glavnu (prvu) iz galerije.
+  const mainImage = images[0] ?? '';
+
+  // Linija se čita iz admina — proizvod je možda premešten u drugu.
+  const categorySlug = categorySlugOf(product.slug, overrides);
+  const categoryLabel =
+    overrides.categories.find((c) => c.slug === categorySlug)?.label ?? product.category;
 
   // Ostale nijanse iste linije — najkorisniji „dalje" izbor u okviru kataloga.
   const sameLine = products.filter(
     (p) =>
-      p.categorySlug === product.categorySlug &&
+      categorySlugOf(p.slug, overrides) === categorySlug &&
       p.slug !== product.slug &&
       !overrides.inactiveSlugs.has(p.slug),
   );
@@ -68,29 +84,24 @@ export default async function ProductPage({ params }: Params) {
             Proizvodi
           </Link>
           <span className="px-2">/</span>
-          <Link href={`/proizvodi#${product.categorySlug}`} className="hover:text-ink">
-            {product.category}
+          <Link href={`/proizvodi#${categorySlug}`} className="hover:text-ink">
+            {categoryLabel}
           </Link>
         </nav>
 
         <div className="grid gap-10 md:grid-cols-2 md:gap-16">
           {/* 1 · Fotografija proizvoda / nijanse */}
           <div>
-            <Media
-              src={image}
+            <ProductGallery
+              images={images}
               alt={product.shade ? `${product.name} — ${product.shade}` : product.name}
-              ratio="4 / 5"
-              label="Slika proizvoda · 1000×1250"
-              priority
-              fit="contain"
-              sizes="(max-width: 768px) 100vw, 50vw"
             />
           </div>
 
           <div>
             {/* 2 · Naziv proizvoda i naziv nijanse */}
             <p className="font-body text-[10px] uppercase tracking-[0.18em] text-muted">
-              {product.category}
+              {categoryLabel}
             </p>
             <h1 className="mt-3 font-display text-[30px] leading-tight text-ink md:text-[38px]">
               {product.name}
@@ -103,7 +114,7 @@ export default async function ProductPage({ params }: Params) {
 
             {/* 3 · Izbor pakovanja + cena — pre opisa proizvoda */}
             <div className="mt-7 border-t border-line pt-7">
-              <VariantPicker product={product} image={image} isAvailable={isAvailable} />
+              <VariantPicker product={product} image={mainImage} isAvailable={isAvailable} />
             </div>
 
             <div className="mt-6 space-y-1 border-t border-line pt-5 font-body text-[12px] leading-relaxed text-muted">
@@ -170,7 +181,7 @@ export default async function ProductPage({ params }: Params) {
         <section>
           <div className="mx-auto max-w-[1200px] px-5 py-14 md:px-8 md:py-16">
             <h2 className="font-display text-[24px] text-ink">
-              {others[0].categorySlug === product.categorySlug
+              {categorySlugOf(others[0].slug, overrides) === categorySlug
                 ? 'Ostale nijanse iz linije'
                 : 'Možda će ti se dopasti'}
             </h2>

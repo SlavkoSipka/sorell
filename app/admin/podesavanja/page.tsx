@@ -11,7 +11,7 @@ export default async function AdminPodesavanjaPage() {
   const [{ data: settings }, { data: codes, error }] = await Promise.all([
     supabase
       .from('site_settings')
-      .select('site_discount_percent, bundle_discount_percent')
+      .select('site_discount_percent, bundle_discount_percent, hero_image_path')
       .eq('id', 1)
       .maybeSingle(),
     supabase
@@ -23,12 +23,14 @@ export default async function AdminPodesavanjaPage() {
   const row = settings as {
     site_discount_percent?: number | string;
     bundle_discount_percent?: number | string;
+    hero_image_path?: string | null;
   } | null;
 
   return (
     <AdminPodesavanjaClient
       initialSiteDiscount={Number(row?.site_discount_percent ?? 0)}
       initialBundleDiscount={Number(row?.bundle_discount_percent ?? 10)}
+      initialHeroImage={row?.hero_image_path ?? ''}
       initialCodes={(codes ?? []) as DiscountCodeRow[]}
       codesError={error?.message ?? null}
     />

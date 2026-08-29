@@ -164,3 +164,14 @@ h1, h2, h3, h4, h5, h6 {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* ── Spisak kategorija na /proizvodi ── */
+.product-groups > [data-group]:not([hidden]) ~ [data-group]:not([hidden]) {
+  margin-top: 3.5rem;
+}
+
+@media (min-width: 768px) {
+  .product-groups > [data-group]:not([hidden]) ~ [data-group]:not([hidden]) {
+    margin-top: 6rem;
+  }
+}

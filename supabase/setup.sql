@@ -12,6 +12,9 @@
 --   0001_init.sql
 --   0002_varijante_i_slike.sql
 --   0003_sorelle_katalog.sql
+--   0004_kategorije.sql
+--   0005_galerija_i_hero.sql
+--   0006_tekstovi_proizvoda.sql
 -- ═══════════════════════════════════════════════════════════════════
 
 -- ───────────────────────────────────────────────────────────────────
@@ -753,5 +756,336 @@ WHERE v.variant_slug NOT IN (
   'effect-top-coat-shimmer-vibe--10ml',
   'effect-top-coat-shimmer-vibe--15ml'
 );
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0004_kategorije.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Kategorije (linije) proizvoda kao podatak iz admin panela
+--
+-- Zašto: do sada je linija bila zakucana u `lib/data/products.ts`, pa se
+-- proizvod nije mogao premestiti iz jedne linije u drugu bez izmene koda.
+-- Sada je kategorija red u bazi, a `products.category_slug` kaže kojoj
+-- proizvod pripada. Admin panel dodaje, preimenuje i briše kategorije i
+-- prevlači proizvode između njih.
+--
+-- Bezbedno je pokrenuti više puta: postojeće kategorije se osvežavaju po
+-- nazivu i redosledu, a RASPORED proizvoda se postavlja samo onima koji
+-- još nemaju kategoriju — tako izmene iz admina ostaju netaknute.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+-- ── 1. Tabela kategorija ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.categories (
+  id SERIAL PRIMARY KEY,
+  -- Ide u URL i u sidro na /proizvodi (#builder-gel-pro-fiber-line).
+  slug TEXT UNIQUE NOT NULL CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  -- Naziv kako piše na sajtu i u adminu.
+  name TEXT NOT NULL CHECK (length(btrim(name)) > 0),
+  sort_order INT NOT NULL DEFAULT 0,
+  -- false = kategorija i njeni proizvodi se ne prikazuju na sajtu.
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.categories IS
+  'Linije proizvoda. Uređuju se iz admin panela (/admin/proizvodi).';
+
+CREATE INDEX IF NOT EXISTS idx_categories_sort ON public.categories (sort_order, id);
+
+-- ── 2. products.category_slug ────────────────────────────────────
+
+ALTER TABLE public.products
+  ADD COLUMN IF NOT EXISTS category_slug TEXT NULL
+    REFERENCES public.categories (slug) ON UPDATE CASCADE ON DELETE SET NULL;
+
+COMMENT ON COLUMN public.products.category_slug IS
+  'Kategorija kojoj proizvod pripada. NULL = nerazvrstano; na sajtu ide u „Ostalo".';
+
+CREATE INDEX IF NOT EXISTS idx_products_category
+  ON public.products (category_slug, sort_order);
+
+-- ── 3. RLS: svi čitaju, samo admin menja ─────────────────────────
+
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read categories" ON public.categories;
+CREATE POLICY "Public read categories"
+  ON public.categories FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "Admins manage categories" ON public.categories;
+CREATE POLICY "Admins manage categories"
+  ON public.categories FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+-- ── 4. Početne kategorije — iste kao dosadašnje linije iz koda ───
+
+INSERT INTO public.categories (slug, name, sort_order)
+VALUES
+  ('builder-gel-pro-fiber-line',    'Builder Gel – Pro Fiber Line',    1),
+  ('builder-gel-fluid-perfect',     'Builder Gel – Fluid Perfect',     2),
+  ('rubber-base-camouflage',        'Rubber Base – Camouflage',        3),
+  ('pro-base-clear',                'Pro Base – Clear',                4),
+  ('super-shine-top-coat',          'Super Shine Top Coat',            5),
+  ('effect-top-coat-milky',         'Effect Top Coat – Milky',         6),
+  ('effect-top-coat-shimmer-vibe',  'Effect Top Coat – Shimmer Vibe',  7)
+ON CONFLICT (slug) DO UPDATE SET
+  name       = EXCLUDED.name,
+  sort_order = EXCLUDED.sort_order;
+
+-- ── 5. Raspored proizvoda — samo za one bez kategorije ───────────
+-- `category_slug IS NULL` čuva svako premeštanje urađeno iz admina.
+
+UPDATE public.products SET category_slug = 'builder-gel-pro-fiber-line'
+  WHERE category_slug IS NULL AND slug LIKE 'pro-fiber-%';
+
+UPDATE public.products SET category_slug = 'builder-gel-fluid-perfect'
+  WHERE category_slug IS NULL AND slug LIKE 'fluid-perfect-%';
+
+UPDATE public.products SET category_slug = 'rubber-base-camouflage'
+  WHERE category_slug IS NULL AND slug LIKE 'rubber-base-%';
+
+UPDATE public.products SET category_slug = 'pro-base-clear'
+  WHERE category_slug IS NULL AND slug = 'pro-base-clear';
+
+UPDATE public.products SET category_slug = 'super-shine-top-coat'
+  WHERE category_slug IS NULL AND slug = 'super-shine-top-coat';
+
+UPDATE public.products SET category_slug = 'effect-top-coat-milky'
+  WHERE category_slug IS NULL AND slug = 'effect-top-coat-milky';
+
+UPDATE public.products SET category_slug = 'effect-top-coat-shimmer-vibe'
+  WHERE category_slug IS NULL AND slug = 'effect-top-coat-shimmer-vibe';
+
+-- ── 6. Cenovnik gelova — samo pakovanja bez unete cene ───────────
+-- Predložene maloprodajne cene, RSD sa PDV-om. Cene unete iz admina
+-- (price_rsd NOT NULL) se NE diraju.
+
+UPDATE public.product_variants v SET price_rsd = c.price
+FROM (VALUES
+  ('builder-gel-pro-fiber-line',   '10 g',  1490),
+  ('builder-gel-pro-fiber-line',   '30 g',  2990),
+  ('builder-gel-pro-fiber-line',   '50 g',  4290),
+  ('builder-gel-fluid-perfect',    '10 g',  1390),
+  ('builder-gel-fluid-perfect',    '30 g',  2790),
+  ('builder-gel-fluid-perfect',    '50 g',  3990),
+  ('rubber-base-camouflage',       '10 ml', 1390),
+  ('rubber-base-camouflage',       '15 ml', 1690),
+  ('pro-base-clear',               '10 ml', 1290),
+  ('pro-base-clear',               '15 ml', 1590),
+  ('super-shine-top-coat',         '10 ml', 1290),
+  ('super-shine-top-coat',         '15 ml', 1590),
+  ('effect-top-coat-milky',        '10 ml', 1390),
+  ('effect-top-coat-milky',        '15 ml', 1690),
+  ('effect-top-coat-shimmer-vibe', '10 ml', 1390),
+  ('effect-top-coat-shimmer-vibe', '15 ml', 1690)
+) AS c (category_slug, package_label, price)
+JOIN public.products p ON p.category_slug = c.category_slug
+WHERE v.product_slug = p.slug
+  AND v.package_label = c.package_label
+  AND v.price_rsd IS NULL;
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0005_galerija_i_hero.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Više slika po proizvodu + hero slika početne strane
+--
+-- Zašto: `products.image_path` drži samo jednu sliku, a klijent za jedan
+-- gel ima fotografiju pakovanja, swatch i rad na noktima. Slike sada žive
+-- u `product_images`, a `image_path` ostaje kao GLAVNA slika (prva po
+-- redosledu) — trigger je održava, pa stari kod i kartice rade bez izmene.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+-- ── 1. Galerija proizvoda ────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.product_images (
+  id SERIAL PRIMARY KEY,
+  product_slug TEXT NOT NULL
+    REFERENCES public.products (slug) ON DELETE CASCADE ON UPDATE CASCADE,
+  -- Javni URL iz bucket-a `product-images`.
+  url TEXT NOT NULL CHECK (length(btrim(url)) > 0),
+  -- Opis slike za čitače ekrana; prazno = koristi se naziv proizvoda.
+  alt TEXT NOT NULL DEFAULT '',
+  -- Najmanji broj je glavna slika proizvoda.
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (product_slug, url)
+);
+
+COMMENT ON TABLE public.product_images IS
+  'Galerija proizvoda. Prva slika po sort_order je glavna i preslikava se u products.image_path.';
+
+CREATE INDEX IF NOT EXISTS idx_product_images_product
+  ON public.product_images (product_slug, sort_order, id);
+
+ALTER TABLE public.product_images ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read product_images" ON public.product_images;
+CREATE POLICY "Public read product_images"
+  ON public.product_images FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "Admins manage product_images" ON public.product_images;
+CREATE POLICY "Admins manage product_images"
+  ON public.product_images FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+-- ── 2. products.image_path = prva slika iz galerije ──────────────
+-- Isti obrazac kao `sync_product_base_price` iz 0002: kartice, Open Graph
+-- i stara polja i dalje čitaju jedno polje, a admin uređuje galeriju.
+
+CREATE OR REPLACE FUNCTION public.sync_product_main_image()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  target TEXT := COALESCE(NEW.product_slug, OLD.product_slug);
+BEGIN
+  UPDATE public.products p
+  SET image_path = COALESCE((
+    SELECT i.url
+    FROM public.product_images i
+    WHERE i.product_slug = target
+    ORDER BY i.sort_order, i.id
+    LIMIT 1
+  ), '')
+  WHERE p.slug = target;
+
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_product_main_image ON public.product_images;
+CREATE TRIGGER trg_sync_product_main_image
+  AFTER INSERT OR UPDATE OR DELETE ON public.product_images
+  FOR EACH ROW EXECUTE FUNCTION public.sync_product_main_image();
+
+-- ── 3. Postojeće slike ulaze u galeriju ──────────────────────────
+
+INSERT INTO public.product_images (product_slug, url, sort_order)
+SELECT p.slug, p.image_path, 1
+FROM public.products p
+WHERE COALESCE(btrim(p.image_path), '') <> ''
+ON CONFLICT (product_slug, url) DO NOTHING;
+
+-- ── 4. Hero slika početne strane ─────────────────────────────────
+
+ALTER TABLE public.site_settings
+  ADD COLUMN IF NOT EXISTS hero_image_path TEXT NOT NULL DEFAULT '';
+
+COMMENT ON COLUMN public.site_settings.hero_image_path IS
+  'Velika slika u zaglavlju početne strane. Prazno = prikazuje se okvir sa preporučenom dimenzijom.';
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0006_tekstovi_proizvoda.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Tekstovi proizvoda u bazi — admin ih menja iz panela
+--
+-- Zašto: naziv, nijansa, opis, način primene i napomene o usklađenosti bili
+-- su zakucani u lib/data/products.ts. Klijent nije mogao da ispravi ni slovnu
+-- grešku bez izmene koda. Sada su to kolone u `products`, a katalog u kodu
+-- ostaje kao rezerva kad je polje u bazi prazno.
+--
+-- Bezbedno je pokrenuti više puta: seed puni SAMO prazna polja, pa izmene
+-- unete iz admina ostaju netaknute.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+ALTER TABLE public.products
+  ADD COLUMN IF NOT EXISTS shade TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS features TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS how_to_use TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS formulation TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS eu_compliance TEXT NOT NULL DEFAULT '';
+
+COMMENT ON COLUMN public.products.shade IS 'Naziv nijanse; prazno kod proizvoda bez nijansi.';
+COMMENT ON COLUMN public.products.features IS 'Opis u tačkama — jedna stavka po redu u admin panelu.';
+COMMENT ON COLUMN public.products.how_to_use IS 'Način primene, jedan pasus.';
+COMMENT ON COLUMN public.products.formulation IS 'Oznake formulacije razdvojene znakom •.';
+COMMENT ON COLUMN public.products.eu_compliance IS 'Napomena o usklađenosti sa propisima EU.';
+
+-- Početni tekstovi iz klijentove tabele (isti kao u lib/data/products.ts).
+UPDATE public.products p SET
+  shade         = CASE WHEN p.shade = '' THEN c.shade ELSE p.shade END,
+  features      = CASE WHEN cardinality(p.features) = 0 THEN c.features ELSE p.features END,
+  how_to_use    = CASE WHEN p.how_to_use = '' THEN c.how_to_use ELSE p.how_to_use END,
+  formulation   = CASE WHEN p.formulation = '' THEN c.formulation ELSE p.formulation END,
+  eu_compliance = CASE WHEN p.eu_compliance = '' THEN c.eu_compliance ELSE p.eu_compliance END
+FROM (VALUES
+  ('pro-fiber-naked-skin', 'Pro Fiber Builder Gel', 'Naked Skin', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-silky-blush', 'Pro Fiber Builder Gel', 'Silky Blush', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-natural-harmony', 'Pro Fiber Builder Gel', 'Natural Harmony', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-cosmopolitan-pink', 'Pro Fiber Builder Gel', 'Cosmopolitan Pink', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-perfect-milky-white', 'Pro Fiber Builder Gel', 'Perfect Milky White', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-creamy-latte', 'Pro Fiber Builder Gel', 'Creamy Latte', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-angel-pink', 'Pro Fiber Builder Gel', 'Angel Pink', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-fiber-soft-milky-white', 'Pro Fiber Builder Gel', 'Soft Milky White', ARRAY['Profesionalna formula pogodna i za početnike i za iskusne tehničare', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Fiber vlakna pružaju dodatnu čvrstinu i stabilnost', 'Odličan balans fleksibilnosti i čvrstine', 'Samonivelišuća tekstura koja se lako kontroliše i ne razliva', 'Pogodan za rad na šablonima, dual tipsama i No File tehniku']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Pro Fiber Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-cool-milky-white', 'Fluid Perfect Builder Gel', 'Cool Milky White', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-crystal-ice-pink', 'Fluid Perfect Builder Gel', 'Crystal Ice Pink', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-pink-sensational', 'Fluid Perfect Builder Gel', 'Pink Sensational', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-cashmere-rose', 'Fluid Perfect Builder Gel', 'Cashmere Rose', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-rich-worm-nude', 'Fluid Perfect Builder Gel', 'Rich Worm Nude', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-rich-deep-nude', 'Fluid Perfect Builder Gel', 'Rich Deep Nude', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-rich-cold-nude', 'Fluid Perfect Builder Gel', 'Rich Cold Nude', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-clear', 'Fluid Perfect Builder Gel', 'Clear', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-banana', 'Fluid Perfect Builder Gel', 'Jogurt Banana', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-lavander-milk', 'Fluid Perfect Builder Gel', 'Jogurt Lavander Milk', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-blue-raspberry', 'Fluid Perfect Builder Gel', 'Jogurt Blue Raspberry', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-fresh-mint', 'Fluid Perfect Builder Gel', 'Jogurt Fresh Mint', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-natural-perfection', 'Fluid Perfect Builder Gel', 'Natural Perfection', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-royal-beige', 'Fluid Perfect Builder Gel', 'Royal Beige', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-melon-cream', 'Fluid Perfect Builder Gel', 'Jogurt Melon Cream', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-ice-berry-milk', 'Fluid Perfect Builder Gel', 'Jogurt Ice Berry Milk', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('fluid-perfect-jogurt-sweet-strawberry', 'Fluid Perfect Builder Gel', 'Jogurt Sweet Strawberry', ARRAY['Fluidna, samonivelišuća formula za brz i precizan rad', 'Namenjen za izlivanje, ojačavanje i korekcije noktiju', 'Ređa struktura omogućava lako raspoređivanje i glatko nivelisanje', 'Odličan izbor za tehničare koji vole brži rad uz dobru kontrolu materijala', 'Pogodan za No File tehniku', 'Može se koristiti za rad na šablonima i dual tipsama']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti Sorelle Pro Base kao preporučenu podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Fluid Perfect Builder Gel odabranom tehnikom i polimerizovati 90–120 sekundi. Završiti Sorelle završnim sjajem po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-cool-milky-white', 'Rubber Base Camouflage', 'Cool Milky White', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-crystal-ice-pink', 'Rubber Base Camouflage', 'Crystal Ice Pink', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-pink-sensational', 'Rubber Base Camouflage', 'Pink Sensational', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-cashmere-rose', 'Rubber Base Camouflage', 'Cashmere Rose', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-rich-worm-nude', 'Rubber Base Camouflage', 'Rich Worm Nude', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-rich-deep-nude', 'Rubber Base Camouflage', 'Rich Deep Nude', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-rich-cold-nude', 'Rubber Base Camouflage', 'Rich Cold Nude', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-clear', 'Rubber Base Camouflage', 'Clear', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-banana', 'Rubber Base Camouflage', 'Jogurt Banana', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-lavander-milk', 'Rubber Base Camouflage', 'Jogurt Lavander Milk', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-blue-raspberry', 'Rubber Base Camouflage', 'Jogurt Blue Raspberry', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-fresh-mint', 'Rubber Base Camouflage', 'Jogurt Fresh Mint', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-natural-perfection', 'Rubber Base Camouflage', 'Natural Perfection', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-royal-beige', 'Rubber Base Camouflage', 'Royal Beige', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-melon-cream', 'Rubber Base Camouflage', 'Jogurt Melon Cream', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-ice-berry-milk', 'Rubber Base Camouflage', 'Jogurt Ice Berry Milk', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('rubber-base-jogurt-sweet-strawberry', 'Rubber Base Camouflage', 'Jogurt Sweet Strawberry', ARRAY['Fleksibilna formula namenjena ojačavanju prirodnih noktiju', 'Posebno pogodna za kraće nokte i tehniku nivelisanja', 'Ređa, samonivelišuća struktura koja se lako raspoređuje', 'Nije namenjena za izlivanje', 'Kamuflažne nijanse daju uredan i prirodan završni izgled', 'Idealna za brzo i precizno salonsko ojačavanje noktiju']::TEXT[], 'Pripremiti i matirati nokatnu ploču i očistiti alkoholom. Naneti tanak sloj Sorelle Pro Base kao podlogu i polimerizovati 90–120 sekundi u UV/LED lampi. Zatim naneti Rubber Base tehnikom nivelisanja i polimerizovati 90–120 sekundi. Nastaviti dizajnom ili završiti Sorelle topom po izboru.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('pro-base-clear', 'Pro Base Clear', '', ARRAY['Univerzalna providna baza idealna za sve tipove noktiju', 'Obezbeđuje odlično prijanjanje uz nokatnu ploču', 'Odlična podloga za Sorelle gradivne gelove', 'Nisu potrebne dodatne pripremne tečnosti pre nanošenja', 'Može se koristiti i za ojačavanje prirodnih noktiju tehnikom nivelisanja', 'Jednostavna za rad i pogodna za početnike i profesionalce']::TEXT[], 'Kao podloga za Sorelle gradivne gelove: naneti tanak sloj Pro Base na pripremljen nokat i polimerizovati 90–120 sekundi u UV/LED lampi, zatim nastaviti odabranim Sorelle gradivnim gelom. Za ojačavanje: naneti i iznivelisati Pro Base, pa polimerizovati 90–120 sekundi.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('super-shine-top-coat', 'Super Shine Top Coat', '', ARRAY['Završni sjaj namenjen zatvaranju kompletnog dizajna', 'Odlična tekstura omogućava lako i ravnomerno nanošenje', 'Daje noktima izražen, ujednačen sjaj koji traje do korekcije', 'Završnom radu daje čist i uredan finiš']::TEXT[], 'Naneti tanak i ravnomeran sloj na završen dizajn i polimerizovati 90–120 sekundi u UV/LED lampi.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('effect-top-coat-milky', 'Effect Top Coat Milky', '', ARRAY['Efektni završni sjaj sa nežnim mlečnim efektom', 'Daje noktima mekši, ujednačen i elegantan završni izgled', 'Idealan kada želite da ublažite postojeću nijansu i dodate mlečni finiš', 'Služi za zatvaranje dizajna', 'Sjaj i efekat u jednom završnom koraku']::TEXT[], 'Naneti tanak i ravnomeran sloj preko završenog dizajna i polimerizovati 90–120 sekundi u UV/LED lampi.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode'),
+  ('effect-top-coat-shimmer-vibe', 'Effect Top Coat Shimmer Vibe', '', ARRAY['Efektni završni sjaj sa nežnim shimmer/bisernim efektom', 'Daje dodatnu dimenziju i poseban finiš postojećoj nijansi', 'Može promeniti završni izgled manikira bez dodatnog dizajna', 'Služi za zatvaranje dizajna', 'Sjaj i efekat u jednom završnom koraku']::TEXT[], 'Naneti tanak i ravnomeran sloj preko završenog dizajna i polimerizovati 90–120 sekundi u UV/LED lampi.', 'HEMA Free • Di-HEMA Free • TPO Free', 'Usklađeno sa važećim propisima EU za kozmetičke proizvode')
+) AS c (slug, name, shade, features, how_to_use, formulation, eu_compliance)
+WHERE p.slug = c.slug;
 
 COMMIT;

@@ -5,6 +5,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { invalidatePricingCache } from '@/lib/use-pricing-data';
 import { BUNDLE_DEFINITIONS } from '@/lib/pricing-engine';
 import { getBundleBySlug } from '@/lib/data/products';
+import AdminHeroImage from '@/components/admin/AdminHeroImage';
 
 export type DiscountCodeRow = {
   id: number;
@@ -17,6 +18,7 @@ export type DiscountCodeRow = {
 type Props = {
   initialSiteDiscount: number;
   initialBundleDiscount: number;
+  initialHeroImage: string;
   initialCodes: DiscountCodeRow[];
   codesError: string | null;
 };
@@ -30,6 +32,7 @@ function parsePct(raw: string): number | null {
 export default function AdminPodesavanjaClient({
   initialSiteDiscount,
   initialBundleDiscount,
+  initialHeroImage,
   initialCodes,
   codesError,
 }: Props) {
@@ -138,7 +141,7 @@ export default function AdminPodesavanjaClient({
   };
 
   const input =
-    'w-full rounded-card border border-line bg-canvas px-3 py-2.5 font-body text-[14px] tabular-nums text-ink focus:border-ink focus:outline-none input-no-spinner';
+    'w-full min-h-[44px] rounded-card border border-line bg-canvas px-3 py-2.5 font-body text-[16px] tabular-nums text-ink focus:border-ink focus:outline-none input-no-spinner sm:text-[14px]';
 
   const percentBundles = BUNDLE_DEFINITIONS.filter((d) => d.kind === 'percent');
   const fixedBundles = BUNDLE_DEFINITIONS.filter((d) => d.kind === 'fixed');
@@ -152,10 +155,12 @@ export default function AdminPodesavanjaClient({
         </p>
       </div>
 
+      <AdminHeroImage initialUrl={initialHeroImage} />
+
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="border border-line bg-canvas p-5 md:p-6">
           <h3 className="font-display text-[18px] text-ink">Globalni popust</h3>
-          <p className="mt-1.5 font-body text-[12px] leading-relaxed text-muted">
+          <p className="mt-1.5 font-body text-[14px] leading-relaxed text-muted">
             Primenjuje se na sve proizvode koji nemaju svoj popust (kartica Proizvodi).
           </p>
           <div className="mt-4 flex gap-2">
@@ -176,13 +181,13 @@ export default function AdminPodesavanjaClient({
                 void saveSetting('site_discount_percent', siteDiscount, setSavingSite, setSiteMsg)
               }
               disabled={savingSite}
-              className="shrink-0 rounded-card border border-ink bg-ink px-5 py-2.5 font-body text-[11px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
+              className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-card border border-ink bg-ink px-5 font-body text-[12px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
             >
               {savingSite ? 'Čuvam…' : 'Sačuvaj'}
             </button>
           </div>
           {siteMsg ? (
-            <p className={`mt-2 font-body text-[12px] ${siteMsg.ok ? 'text-accent' : 'text-danger'}`}>
+            <p className={`mt-2 font-body text-[13px] ${siteMsg.ok ? 'text-accent' : 'text-danger'}`}>
               {siteMsg.text}
             </p>
           ) : null}
@@ -190,7 +195,7 @@ export default function AdminPodesavanjaClient({
 
         <section className="border border-line bg-canvas p-5 md:p-6">
           <h3 className="font-display text-[18px] text-ink">Paketni popust</h3>
-          <p className="mt-1.5 font-body text-[12px] leading-relaxed text-muted">
+          <p className="mt-1.5 font-body text-[14px] leading-relaxed text-muted">
             Važi za pakete sa procentualnim popustom:{' '}
             {percentBundles.map((d) => getBundleBySlug(d.id)?.name ?? d.id).join(', ') || '—'}.
           </p>
@@ -212,18 +217,18 @@ export default function AdminPodesavanjaClient({
                 void saveSetting('bundle_discount_percent', bundleDiscount, setSavingBundle, setBundleMsg)
               }
               disabled={savingBundle}
-              className="shrink-0 rounded-card border border-ink bg-ink px-5 py-2.5 font-body text-[11px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
+              className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-card border border-ink bg-ink px-5 font-body text-[12px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
             >
               {savingBundle ? 'Čuvam…' : 'Sačuvaj'}
             </button>
           </div>
           {bundleMsg ? (
-            <p className={`mt-2 font-body text-[12px] ${bundleMsg.ok ? 'text-accent' : 'text-danger'}`}>
+            <p className={`mt-2 font-body text-[13px] ${bundleMsg.ok ? 'text-accent' : 'text-danger'}`}>
               {bundleMsg.text}
             </p>
           ) : null}
           {fixedBundles.length > 0 ? (
-            <p className="mt-3 font-body text-[12px] leading-relaxed text-muted">
+            <p className="mt-3 font-body text-[14px] leading-relaxed text-muted">
               Paketi sa fiksnom cenom (
               {fixedBundles.map((d) => getBundleBySlug(d.id)?.name ?? d.id).join(', ')}) se menjaju u{' '}
               <span className="font-mono">lib/pricing-engine.ts</span>.
@@ -234,7 +239,7 @@ export default function AdminPodesavanjaClient({
 
       <section className="border border-line bg-canvas p-5 md:p-6">
         <h3 className="font-display text-[18px] text-ink">Promo kodovi</h3>
-        <p className="mt-1.5 max-w-[640px] font-body text-[12px] leading-relaxed text-muted">
+        <p className="mt-1.5 max-w-[640px] font-body text-[14px] leading-relaxed text-muted">
           Kupac unosi kod na stranici porudžbine. Popust se računa na iznos posle popusta na
           proizvode.
         </p>
@@ -284,19 +289,19 @@ export default function AdminPodesavanjaClient({
             type="button"
             onClick={() => void addCode()}
             disabled={addingCode}
-            className="rounded-card border border-ink bg-ink px-5 py-2.5 font-body text-[11px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-card border border-ink bg-ink px-5 font-body text-[12px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50 sm:w-auto"
           >
             {addingCode ? 'Dodajem…' : 'Dodaj kod'}
           </button>
         </div>
 
         {codeMsg ? (
-          <p className={`mt-2 font-body text-[12px] ${codeMsg.ok ? 'text-accent' : 'text-danger'}`}>
+          <p className={`mt-2 font-body text-[13px] ${codeMsg.ok ? 'text-accent' : 'text-danger'}`}>
             {codeMsg.text}
           </p>
         ) : null}
         {codesError ? (
-          <p className="mt-2 font-body text-[12px] text-danger">
+          <p className="mt-2 font-body text-[13px] text-danger">
             Kodovi nisu učitani: {codesError}
           </p>
         ) : null}
@@ -314,13 +319,13 @@ export default function AdminPodesavanjaClient({
               >
                 <div>
                   <p className="font-mono text-[14px] text-ink">{c.code}</p>
-                  <p className="mt-0.5 font-body text-[11px] text-muted">
+                  <p className="mt-0.5 font-body text-[13px] text-muted">
                     −{Number(c.discount_percent)}% ·{' '}
                     {new Date(c.created_at).toLocaleDateString('sr-RS')}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 font-body text-[12px] text-ink-soft">
+                  <label className="inline-flex min-h-[40px] items-center gap-2 font-body text-[13px] text-ink-soft">
                     <input
                       type="checkbox"
                       checked={c.is_active}
@@ -331,7 +336,7 @@ export default function AdminPodesavanjaClient({
                   <button
                     type="button"
                     onClick={() => void deleteCode(c.id)}
-                    className="font-body text-[11px] text-muted underline underline-offset-2 hover:text-danger"
+                    className="inline-flex min-h-[40px] items-center font-body text-[13px] text-muted underline underline-offset-2 hover:text-danger"
                   >
                     Obriši
                   </button>

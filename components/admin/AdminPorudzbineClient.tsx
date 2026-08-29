@@ -65,7 +65,7 @@ function productsTotalRsd(o: AdminOrderRow): number {
 
 function OrderDetails({ o }: { o: AdminOrderRow }) {
   return (
-    <div className="space-y-2 font-body text-[11px] text-muted">
+    <div className="space-y-2 font-body text-[13px] text-muted">
       <p>
         {o.address_line}, {o.postal_code} {o.city}
       </p>
@@ -164,13 +164,13 @@ function OrderAdminNotesField({
         rows={4}
         maxLength={8000}
         placeholder="Interne beleške…"
-        className="min-h-[5.5rem] w-full resize-y rounded-card border border-line bg-canvas px-2.5 py-2 font-body text-[12px] leading-relaxed text-ink placeholder:text-muted focus:border-ink focus:outline-none"
+        className="min-h-[5.5rem] w-full resize-y rounded-card border border-line bg-canvas px-2.5 py-2 font-body text-[16px] leading-relaxed text-ink placeholder:text-muted focus:border-ink focus:outline-none sm:text-[13px]"
       />
       <div className="min-h-[14px]">
         {saving ? (
-          <span className="font-body text-[10px] text-muted">Čuvanje…</span>
+          <span className="font-body text-[12px] text-muted">Čuvanje…</span>
         ) : saveError ? (
-          <span className="font-body text-[10px] text-danger">Nije sačuvano. Pokušaj ponovo.</span>
+          <span className="font-body text-[12px] text-danger">Nije sačuvano. Pokušaj ponovo.</span>
         ) : null}
       </div>
     </div>
@@ -359,7 +359,7 @@ export default function AdminPorudzbineClient({
       value={o.status}
       disabled={updating === o.id}
       onChange={(e) => updateStatus(o.id, e.target.value)}
-      className="w-full rounded-card border border-line bg-canvas px-2 py-1.5 font-body text-[11px] text-ink focus:border-ink focus:outline-none md:max-w-[130px]"
+      className="min-h-[44px] w-full rounded-card border border-line bg-canvas px-2.5 py-2 font-body text-[16px] text-ink focus:border-ink focus:outline-none sm:text-[13px] md:max-w-[140px]"
       aria-label="Status porudžbine"
     >
       {Array.from(new Set([...ORDER_STATUSES, o.status])).map((s) => (
@@ -394,16 +394,16 @@ export default function AdminPorudzbineClient({
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Pretraga: ime, telefon, email, adresa, grad, iznos, proizvod…"
-          className="w-full rounded-card border border-line bg-canvas px-3 py-2.5 font-body text-[13px] text-ink placeholder:text-muted focus:border-ink focus:outline-none"
+          className="min-h-[44px] w-full rounded-card border border-line bg-canvas px-3 py-2.5 font-body text-[16px] text-ink placeholder:text-muted focus:border-ink focus:outline-none sm:text-[14px]"
         />
-        {isSearching ? <p className="font-body text-[11px] text-muted">Pretraga…</p> : null}
+        {isSearching ? <p className="font-body text-[13px] text-muted">Pretraga…</p> : null}
         {fetchError ? (
-          <p className="font-body text-[11px] text-danger" role="alert">
+          <p className="font-body text-[13px] text-danger" role="alert">
             {fetchError}
           </p>
         ) : null}
         {searchQuery && !isSearching ? (
-          <p className="font-body text-[11px] text-muted">
+          <p className="font-body text-[13px] text-muted">
             Rezultata: {filteredOrders.length}
             {filteredOrders.length === 0 ? ' — probaj drugi pojam.' : null}
           </p>
@@ -413,7 +413,7 @@ export default function AdminPorudzbineClient({
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
         <label
           htmlFor="admin-orders-status"
-          className="shrink-0 font-body text-[10px] uppercase tracking-[0.12em] text-muted"
+          className="shrink-0 font-body text-[11px] uppercase tracking-[0.12em] text-muted"
         >
           Status
         </label>
@@ -421,7 +421,7 @@ export default function AdminPorudzbineClient({
           id="admin-orders-status"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="w-full min-w-[200px] rounded-card border border-line bg-canvas px-3 py-2 font-body text-[12px] text-ink focus:border-ink focus:outline-none sm:w-auto"
+          className="min-h-[44px] w-full min-w-[200px] rounded-card border border-line bg-canvas px-3 py-2 font-body text-[16px] text-ink focus:border-ink focus:outline-none sm:w-auto sm:text-[14px]"
         >
           <option value="all">Sve porudžbine</option>
           {ORDER_STATUSES.map((s) => (
@@ -451,7 +451,7 @@ export default function AdminPorudzbineClient({
             type="button"
             onClick={() => void loadAll()}
             disabled={loadingAll}
-            className="rounded-card border border-line bg-canvas px-4 py-2 font-body text-[12px] text-ink hover:border-ink disabled:opacity-50"
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-card border border-line bg-canvas px-4 font-body text-[14px] text-ink hover:border-ink disabled:opacity-50 sm:w-auto"
           >
             {loadingAll ? 'Učitavanje…' : 'Učitaj sve porudžbine'}
           </button>
@@ -461,13 +461,13 @@ export default function AdminPorudzbineClient({
       {/* Mobilni prikaz */}
       <div className="space-y-3 md:hidden">
         {filteredOrders.map((o) => (
-          <div key={o.id} className="space-y-3 border border-line bg-canvas p-4 font-body text-[12px]">
+          <div key={o.id} className="space-y-3 border border-line bg-canvas p-4 font-body text-[14px]">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-ink">
                   {o.customer_first_name} {o.customer_last_name}
                 </p>
-                <p className="mt-0.5 text-[10px] tabular-nums text-muted">
+                <p className="mt-0.5 text-[12px] tabular-nums text-muted">
                   {new Date(o.created_at).toLocaleString('sr-RS', {
                     dateStyle: 'short',
                     timeStyle: 'short',
@@ -479,7 +479,7 @@ export default function AdminPorudzbineClient({
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+            <div className="flex flex-wrap gap-x-4 gap-y-2 text-[13px]">
               <a href={telHref(o.customer_phone)} className="text-ink underline underline-offset-2">
                 {o.customer_phone}
               </a>
@@ -494,12 +494,12 @@ export default function AdminPorudzbineClient({
             <div>{statusSelect(o)}</div>
 
             <div>
-              <p className="mb-1.5 font-body text-[10px] uppercase tracking-[0.1em] text-muted">Beleške</p>
+              <p className="mb-1.5 font-body text-[11px] uppercase tracking-[0.1em] text-muted">Beleške</p>
               <OrderAdminNotesField orderId={o.id} initial={o.admin_notes} onSaved={patchAdminNotes} />
             </div>
 
             <details className="cursor-pointer">
-              <summary className="font-body text-[11px] text-ink underline underline-offset-2">
+              <summary className="inline-flex min-h-[40px] items-center font-body text-[13px] text-ink underline underline-offset-2">
                 Adresa i stavke
               </summary>
               <div className="mt-3 max-w-[320px] pl-1">
@@ -557,7 +557,7 @@ export default function AdminPorudzbineClient({
                 <td className="px-3 py-3">{statusSelect(o)}</td>
                 <td className="px-3 py-3">
                   <details className="cursor-pointer">
-                    <summary className="font-body text-[11px] text-ink underline underline-offset-2">
+                    <summary className="inline-flex min-h-[40px] items-center font-body text-[13px] text-ink underline underline-offset-2">
                       Adresa i stavke
                     </summary>
                     <div className="mt-3 max-w-[320px] pl-1">

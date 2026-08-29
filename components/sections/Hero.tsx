@@ -1,8 +1,12 @@
 import Link from 'next/link';
 import Media from '@/components/ui/Media';
+import { getProductOverrides } from '@/lib/products-server';
 import { SITE } from '@/lib/site-config';
 
-export default function Hero() {
+export default async function Hero() {
+  // Slika se kači iz admina (Podešavanja → Hero slika); prazno = placeholder okvir.
+  const { heroImage } = await getProductOverrides();
+
   return (
     <section className="border-b border-line">
       <div className="mx-auto grid max-w-[1200px] items-center gap-10 px-5 py-14 md:grid-cols-2 md:gap-16 md:px-8 md:py-20">
@@ -38,7 +42,7 @@ export default function Hero() {
 
         <div data-reveal="true" data-reveal-delay="120">
           <Media
-            src=""
+            src={heroImage}
             alt="Glavna fotografija"
             ratio="4 / 5"
             label="Hero slika · preporuka 1200×1500"
