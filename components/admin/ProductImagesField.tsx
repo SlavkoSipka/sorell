@@ -33,8 +33,12 @@ export default function ProductImagesField({
 
   return (
     <div className="w-full">
-      <p className="mb-2 font-body text-[11px] uppercase tracking-[0.12em] text-muted">
+      <p className="font-body text-[11px] uppercase tracking-[0.12em] text-muted">
         Slike ({images.length})
+      </p>
+      <p className="mb-2 mt-1 font-body text-[12px] leading-relaxed text-muted">
+        Okači slike sa telefona kakve jesu — svaka se sama iseca na 4:5 iz sredine i smanjuje, pa
+        popunjava ceo okvir na sajtu. Prva je glavna.
       </p>
 
       {images.length === 0 ? (
@@ -42,7 +46,7 @@ export default function ProductImagesField({
           <div className="relative aspect-[4/5] w-[84px] shrink-0 overflow-hidden border border-line bg-surface-2">
             {fallbackImage ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={fallbackImage} alt="" className="h-full w-full object-contain p-1.5" />
+              <img src={fallbackImage} alt="" className="h-full w-full object-cover" />
             ) : null}
           </div>
           <p className="font-body text-[13px] leading-relaxed text-muted">
@@ -53,9 +57,9 @@ export default function ProductImagesField({
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
           {images.map((img, i) => (
             <li key={img.id} className="border border-line bg-canvas p-1.5">
-              <div className="relative aspect-square w-full overflow-hidden bg-surface-2">
+              <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.url} alt="" className="h-full w-full object-contain p-1" />
+                <img src={img.url} alt="" className="h-full w-full object-cover" />
                 {i === 0 ? (
                   <span className="absolute left-0 top-0 bg-ink px-1.5 py-0.5 font-body text-[9px] uppercase tracking-[0.1em] text-canvas">
                     Glavna

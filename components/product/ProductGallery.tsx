@@ -19,7 +19,6 @@ export default function ProductGallery({ images, alt }: { images: string[]; alt:
         ratio="4 / 5"
         label="Slika proizvoda · 1000×1250"
         priority
-        fit="contain"
         sizes="(max-width: 768px) 100vw, 50vw"
       />
 
@@ -37,7 +36,7 @@ export default function ProductGallery({ images, alt }: { images: string[]; alt:
               }`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={src} alt="" className="h-full w-full object-contain p-1" />
+              <img src={src} alt="" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>

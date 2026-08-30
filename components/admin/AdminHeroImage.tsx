@@ -3,7 +3,13 @@
 import { useRef, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { invalidatePricingCache } from '@/lib/use-pricing-data';
-import { ACCEPTED_IMAGE_TYPES, rejectReason, removeImage, uploadImage } from '@/lib/admin/images';
+import {
+  ACCEPTED_IMAGE_TYPES,
+  processImage,
+  rejectReason,
+  removeImage,
+  uploadProcessed,
+} from '@/lib/admin/images';
 
 /** Velika slika u zaglavlju početne strane. */
 export default function AdminHeroImage({ initialUrl }: { initialUrl: string }) {
@@ -52,7 +58,19 @@ export default function AdminHeroImage({ initialUrl }: { initialUrl: string }) {
 
     setBusy(true);
     setMsg(null);
-    const publicUrl = await uploadImage(supabase, '_hero', file);
+
+    // Isecanje na 4:5 i pakovanje u WebP se rade ovde, pre slanja.
+    const processed = await processImage(file);
+    if (!processed) {
+      setBusy(false);
+      setMsg({
+        ok: false,
+        text: 'Sliku nije moguće otvoriti. Sačuvaj je kao JPG ili PNG pa pokušaj ponovo.',
+      });
+      return;
+    }
+
+    const publicUrl = await uploadProcessed(supabase, '_hero', processed);
     if (!publicUrl) {
       setBusy(false);
       setMsg({ ok: false, text: 'Slanje slike nije uspelo.' });
@@ -65,7 +83,8 @@ export default function AdminHeroImage({ initialUrl }: { initialUrl: string }) {
     <section className="border border-line bg-canvas p-4 md:p-6">
       <h3 className="font-display text-[18px] text-ink">Hero slika početne strane</h3>
       <p className="mt-1.5 font-body text-[13px] leading-relaxed text-muted">
-        Velika fotografija pored naslova na početnoj. Preporuka 1200×1500 (uspravno), do 5 MB.
+        Velika fotografija pored naslova na početnoj. Slikaj uspravno telefonom i okači kakva
+        jeste — sama se iseca na 4:5 i smanjuje.
       </p>
 
       <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">

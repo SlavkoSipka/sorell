@@ -5,7 +5,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { invalidatePricingCache } from '@/lib/use-pricing-data';
 import { discountedUnitPriceRsd, formatRsd } from '@/lib/price';
 import { placeholderImage } from '@/lib/data/product-images';
-import { rejectReason, removeImage, uploadImage } from '@/lib/admin/images';
+import { processImage, rejectReason, removeImage, uploadProcessed } from '@/lib/admin/images';
 import ProductImagesField, { type AdminImageRow } from '@/components/admin/ProductImagesField';
 
 /** Koliko proizvoda stane u „Izdvojeno iz ponude" na početnoj. */
@@ -601,7 +601,17 @@ export default function AdminProizvodiClient({
         break;
       }
 
-      const url = await uploadImage(supabase, slug, file);
+      // Isecanje na 4:5 i pakovanje u WebP se rade ovde, pre slanja.
+      const processed = await processImage(file);
+      if (!processed) {
+        patch(slug, {
+          uploading: false,
+          error: `„${file.name}" nije moguće otvoriti. Sačuvaj je kao JPG ili PNG pa pokušaj ponovo.`,
+        });
+        break;
+      }
+
+      const url = await uploadProcessed(supabase, slug, processed);
       if (!url) {
         patch(slug, { uploading: false, error: 'Slanje slike nije uspelo.' });
         break;

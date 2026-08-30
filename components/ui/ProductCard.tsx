@@ -29,7 +29,6 @@ export default function ProductCard({
           alt={title}
           ratio="4 / 5"
           label={`Slika · ${title}`}
-          fit="contain"
           className="transition-opacity duration-300 group-hover:opacity-90"
         />
 
