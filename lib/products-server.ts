@@ -29,6 +29,12 @@ export type ProductContent = {
   packagesLabel: string;
 };
 
+/** Klip iz galerije proizvoda. `poster` je prvi kadar; prazno = sivi okvir. */
+export type ProductVideo = {
+  url: string;
+  poster: string;
+};
+
 export type ProductOverrides = {
   /** Proizvodi isključeni u adminu (`products.is_active = false`). */
   inactiveSlugs: Set<string>;
@@ -44,8 +50,14 @@ export type ProductOverrides = {
   contentBySlug: Map<string, ProductContent>;
   /** Sve slike proizvoda iz galerije, redom; prva je glavna. */
   imagesBySlug: Map<string, string[]>;
+  /** Video klipovi proizvoda, redom kojim su složeni u adminu. */
+  videosBySlug: Map<string, ProductVideo[]>;
+  /** Link ka Instagram objavi po proizvodu; bez ključa = nije unet. */
+  instagramBySlug: Map<string, string>;
   /** Velika slika na početnoj strani. Prazno = placeholder okvir. */
   heroImage: string;
+  /** Gde vodi klik na hero sliku. Prazno = slika nije link. */
+  heroLink: string;
   /** Linije iz admina, u redosledu prikaza. Prazno = baza još nema kategorije. */
   categories: Category[];
   /** Kojoj liniji proizvod pripada po adminu; bez ključa = nerazvrstan. */
@@ -60,7 +72,10 @@ const EMPTY: ProductOverrides = {
   priceByVariant: new Map(),
   contentBySlug: new Map(),
   imagesBySlug: new Map(),
+  videosBySlug: new Map(),
+  instagramBySlug: new Map(),
   heroImage: '',
+  heroLink: '',
   categories: [],
   categoryByProduct: new Map(),
 };
@@ -85,7 +100,8 @@ async function restGet<T>(path: string): Promise<T[] | null> {
 }
 
 export async function getProductOverrides(): Promise<ProductOverrides> {
-  const [productRows, variantRows, categoryRows, imageRows, settingsRows] = await Promise.all([
+  const [productRows, variantRows, categoryRows, imageRows, videoRows, settingsRows] =
+    await Promise.all([
     restGet<{
       slug: string;
       image_path: string | null;
@@ -99,8 +115,9 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
       formulation: string | null;
       eu_compliance: string | null;
       volume: string | null;
+      instagram_url: string | null;
     }>(
-      'products?select=slug,image_path,is_active,is_featured,category_slug,name,shade,features,how_to_use,formulation,eu_compliance,volume',
+      'products?select=slug,image_path,is_active,is_featured,category_slug,name,shade,features,how_to_use,formulation,eu_compliance,volume,instagram_url',
     ),
     restGet<{ variant_slug: string; price_rsd: number | string | null; is_active: boolean }>(
       'product_variants?select=variant_slug,price_rsd,is_active',
@@ -111,7 +128,12 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
     restGet<{ product_slug: string; url: string }>(
       'product_images?select=product_slug,url&order=sort_order.asc&order=id.asc',
     ),
-    restGet<{ hero_image_path: string | null }>('site_settings?select=hero_image_path&id=eq.1'),
+    restGet<{ product_slug: string; url: string; poster_url: string | null }>(
+      'product_videos?select=product_slug,url,poster_url&order=sort_order.asc&order=id.asc',
+    ),
+    restGet<{ hero_image_path: string | null; hero_link_url: string | null }>(
+      'site_settings?select=hero_image_path,hero_link_url&id=eq.1',
+    ),
   ]);
 
   if (!productRows && !variantRows) return EMPTY;
@@ -121,11 +143,13 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
   const imageBySlug = new Map<string, string>();
   const categoryByProduct = new Map<string, string>();
   const contentBySlug = new Map<string, ProductContent>();
+  const instagramBySlug = new Map<string, string>();
   for (const row of productRows ?? []) {
     if (row.is_active === false) inactiveSlugs.add(row.slug);
     if (row.is_featured === true) featuredSlugs.add(row.slug);
     if (row.image_path) imageBySlug.set(row.slug, row.image_path);
     if (row.category_slug) categoryByProduct.set(row.slug, row.category_slug);
+    if (row.instagram_url) instagramBySlug.set(row.slug, row.instagram_url);
     contentBySlug.set(row.slug, {
       name: row.name ?? '',
       shade: row.shade ?? '',
@@ -145,7 +169,19 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
     imagesBySlug.set(row.product_slug, list);
   }
 
+  // Bez migracije 0008 `videoRows` je null — galerija tada prikazuje samo slike.
+  const videosBySlug = new Map<string, ProductVideo[]>();
+  for (const row of videoRows ?? []) {
+    if (!row.url) continue;
+    const list = videosBySlug.get(row.product_slug) ?? [];
+    list.push({ url: row.url, poster: row.poster_url ?? '' });
+    videosBySlug.set(row.product_slug, list);
+  }
+
   const heroImage = settingsRows?.[0]?.hero_image_path ?? '';
+  // Vrednost ide u href, pa se propušta samo interna putanja ili http(s).
+  const heroLinkRaw = (settingsRows?.[0]?.hero_link_url ?? '').trim();
+  const heroLink = /^(\/|https?:\/\/)\S*$/.test(heroLinkRaw) ? heroLinkRaw : '';
 
   const categories: Category[] = (categoryRows ?? []).map((c) => ({
     slug: c.slug,
@@ -176,7 +212,10 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
     priceByVariant,
     contentBySlug,
     imagesBySlug,
+    videosBySlug,
+    instagramBySlug,
     heroImage,
+    heroLink,
     categories,
     categoryByProduct,
   };
@@ -200,6 +239,20 @@ export function mergeProduct(product: Product, overrides: ProductOverrides): Pro
     euCompliance: c.euCompliance.trim() || product.euCompliance,
     packagesLabel: c.packagesLabel.trim() || product.packagesLabel,
   };
+}
+
+/**
+ * Link ka Instagram objavi. Vraća prazno ako nije unet ili ako adresa nije
+ * sa instagram.com — vrednost ide u `href`, pa se ne veruje samo bazi.
+ */
+export function resolveInstagram(slug: string, overrides: ProductOverrides): string {
+  const url = (overrides.instagramBySlug.get(slug) ?? '').trim();
+  return /^https:\/\/([a-z0-9-]+\.)?instagram\.com\//i.test(url) ? url : '';
+}
+
+/** Klipovi proizvoda za galeriju; prazno kad ih nema ili migracija nije puštena. */
+export function resolveVideos(slug: string, overrides: ProductOverrides): ProductVideo[] {
+  return overrides.videosBySlug.get(slug) ?? [];
 }
 
 /** Sve slike proizvoda za galeriju; bar jedna, i to ona koju prikazuje kartica. */

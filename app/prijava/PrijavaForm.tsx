@@ -98,17 +98,17 @@ export default function PrijavaForm() {
   return (
     <main className="flex min-h-[65vh] flex-col justify-center px-5 py-16 md:px-8">
       <div className="mx-auto w-full max-w-[380px]">
-        <p className="text-center font-body text-[10px] uppercase tracking-[0.2em] text-muted">
+        <p className="text-center font-body text-[11px] uppercase tracking-[0.2em] text-muted">
           {SITE.brandName}
         </p>
         <h1 className="mt-3 text-center font-display text-[28px] text-ink">Prijava</h1>
-        <p className="mt-3 text-center font-body text-[13px] leading-relaxed text-muted">
+        <p className="mt-3 text-center font-body text-[14px] leading-relaxed text-muted">
           Pristup admin panelu.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-9 space-y-4">
           <div>
-            <label htmlFor="login-email" className="mb-2 block font-body text-[11px] uppercase tracking-[0.14em] text-ink">
+            <label htmlFor="login-email" className="mb-2 block font-body text-[12px] uppercase tracking-[0.14em] text-ink">
               Email
             </label>
             <input
@@ -124,7 +124,7 @@ export default function PrijavaForm() {
             />
           </div>
           <div>
-            <label htmlFor="login-password" className="mb-2 block font-body text-[11px] uppercase tracking-[0.14em] text-ink">
+            <label htmlFor="login-password" className="mb-2 block font-body text-[12px] uppercase tracking-[0.14em] text-ink">
               Lozinka
             </label>
             <input
@@ -140,7 +140,7 @@ export default function PrijavaForm() {
           </div>
 
           {error ? (
-            <p className="font-body text-[13px] text-danger" role="alert">
+            <p className="font-body text-[14px] text-danger" role="alert">
               {error}
             </p>
           ) : null}
@@ -148,14 +148,14 @@ export default function PrijavaForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-card border border-ink bg-ink py-3 font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:pointer-events-none disabled:opacity-50"
+            className="w-full rounded-card border border-ink bg-ink py-3 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:pointer-events-none disabled:opacity-50"
           >
             {loading ? 'Prijava…' : 'Prijavi se'}
           </button>
         </form>
 
         <p className="mt-10 text-center">
-          <Link href="/" className="font-body text-[12px] text-muted underline underline-offset-4 hover:text-ink">
+          <Link href="/" className="font-body text-[13px] text-muted underline underline-offset-4 hover:text-ink">
             Nazad na početnu
           </Link>
         </p>

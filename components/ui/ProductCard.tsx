@@ -39,7 +39,7 @@ export default function ProductCard({
           {/* Nijansa je ono po čemu se proizvodi u istoj liniji razlikuju —
               bez nje bi se 17 kartica čitalo isto. */}
           {product.shade ? (
-            <p className="mt-1 font-body text-[11px] uppercase tracking-[0.12em] text-accent">
+            <p className="mt-1 font-body text-[12px] uppercase tracking-[0.12em] text-accent">
               {product.shade}
             </p>
           ) : null}

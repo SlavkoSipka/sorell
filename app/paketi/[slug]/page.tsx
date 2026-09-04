@@ -54,7 +54,7 @@ export default async function BundlePage({ params }: Params) {
       <ScrollRevealInit />
 
       <div className="mx-auto max-w-[1200px] px-5 py-8 md:px-8 md:py-12">
-        <nav className="mb-8 font-body text-[11px] uppercase tracking-[0.14em] text-muted">
+        <nav className="mb-8 font-body text-[12px] uppercase tracking-[0.14em] text-muted">
           <Link href="/proizvodi" className="hover:text-ink">
             Proizvodi
           </Link>
@@ -74,7 +74,7 @@ export default async function BundlePage({ params }: Params) {
           />
 
           <div>
-            <p className="font-body text-[10px] uppercase tracking-[0.18em] text-muted">Paket</p>
+            <p className="font-body text-[11px] uppercase tracking-[0.18em] text-muted">Paket</p>
             <h1 className="mt-3 font-display text-[32px] leading-tight text-ink md:text-[40px]">
               {bundle.name}
             </h1>
@@ -95,13 +95,13 @@ export default async function BundlePage({ params }: Params) {
                   label="Dodaj paket u korpu"
                 />
               ) : (
-                <p className="rounded-card border border-line bg-surface px-5 py-3.5 text-center font-body text-[12px] uppercase tracking-[0.12em] text-muted">
+                <p className="rounded-card border border-line bg-surface px-5 py-3.5 text-center font-body text-[13px] uppercase tracking-[0.12em] text-muted">
                   Paket trenutno nije dostupan
                 </p>
               )}
             </div>
 
-            <div className="mt-5 space-y-1 border-t border-line pt-5 font-body text-[12px] leading-relaxed text-muted">
+            <div className="mt-5 space-y-1 border-t border-line pt-5 font-body text-[13px] leading-relaxed text-muted">
               <p>Plaćanje pouzećem pri preuzimanju.</p>
               <p>
                 Dostava {SHIPPING_CARRIER} — {formatRsd(SHIPPING_RSD)}. {FREE_SHIPPING_THRESHOLD_LABEL}.
@@ -145,7 +145,7 @@ export default async function BundlePage({ params }: Params) {
                   <p className="mt-3 font-display text-[17px] text-ink group-hover:underline underline-offset-4">
                     {title}
                   </p>
-                  <p className="mt-0.5 font-body text-[12px] text-muted">{c.variant.label}</p>
+                  <p className="mt-0.5 font-body text-[13px] text-muted">{c.variant.label}</p>
                   <div className="mt-1">
                     <ProductPrice priceKey={c.key} size="sm" />
                   </div>

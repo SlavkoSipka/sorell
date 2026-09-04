@@ -17,7 +17,7 @@ export default function ONamaPage() {
 
       <section className="border-b border-line">
         <div className="mx-auto max-w-[760px] px-5 py-14 text-center md:px-8 md:py-20">
-          <p className="font-body text-[10px] uppercase tracking-[0.2em] text-muted">O nama</p>
+          <p className="font-body text-[11px] uppercase tracking-[0.2em] text-muted">O nama</p>
           <h1 className="mt-4 font-display text-[32px] leading-tight text-ink md:text-[44px]">
             Naslov priče o brendu
           </h1>
@@ -51,13 +51,13 @@ export default function ONamaPage() {
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link
               href="/usluge"
-              className="rounded-card border border-ink bg-ink px-6 py-3 font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
+              className="rounded-card border border-ink bg-ink px-6 py-3 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
             >
               Usluge
             </Link>
             <Link
               href="/kontakt"
-              className="rounded-card border border-line-strong px-6 py-3 font-body text-[11px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
+              className="rounded-card border border-line-strong px-6 py-3 font-body text-[12px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
             >
               Kontakt
             </Link>

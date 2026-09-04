@@ -11,9 +11,23 @@ import {
   uploadProcessed,
 } from '@/lib/admin/images';
 
-/** Velika slika u zaglavlju početne strane. */
-export default function AdminHeroImage({ initialUrl }: { initialUrl: string }) {
+/** Dozvoljeno je samo interno „/nesto" ili puna http(s) adresa — vrednost ide u href. */
+function linkJeIspravan(raw: string): boolean {
+  const v = raw.trim();
+  return v === '' || /^(\/|https?:\/\/)\S*$/.test(v);
+}
+
+/** Velika slika u zaglavlju početne strane, po želji i kao dugme ka nekom linku. */
+export default function AdminHeroImage({
+  initialUrl,
+  initialLink,
+}: {
+  initialUrl: string;
+  initialLink: string;
+}) {
   const [url, setUrl] = useState(initialUrl);
+  const [link, setLink] = useState(initialLink);
+  const [savedLink, setSavedLink] = useState(initialLink);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -44,6 +58,35 @@ export default function AdminHeroImage({ initialUrl }: { initialUrl: string }) {
     setBusy(false);
     setMsg({ ok: true, text: next ? 'Hero slika je sačuvana.' : 'Hero slika je uklonjena.' });
     invalidatePricingCache();
+  };
+
+  const saveLink = async () => {
+    const next = link.trim();
+    if (!linkJeIspravan(next)) {
+      setMsg({
+        ok: false,
+        text: 'Link mora počinjati sa https:// ili sa / za stranicu na sajtu (npr. /proizvodi).',
+      });
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setBusy(true);
+    setMsg(null);
+    const { error } = await supabase
+      .from('site_settings')
+      .update({ hero_link_url: next })
+      .eq('id', 1);
+    setBusy(false);
+
+    if (error) {
+      setMsg({ ok: false, text: 'Čuvanje linka nije uspelo.' });
+      return;
+    }
+    setSavedLink(next);
+    setMsg({ ok: true, text: next ? 'Link je sačuvan — slika je sada dugme.' : 'Link je uklonjen.' });
   };
 
   const pick = async (file: File) => {
@@ -130,6 +173,42 @@ export default function AdminHeroImage({ initialUrl }: { initialUrl: string }) {
               Ukloni sliku
             </button>
           ) : null}
+
+          <div className="mt-5 border-t border-line pt-4">
+            <label
+              htmlFor="hero-link"
+              className="mb-1.5 block font-body text-[11px] uppercase tracking-[0.12em] text-muted"
+            >
+              Klik na sliku vodi na
+            </label>
+            <p className="mb-2 font-body text-[13px] leading-relaxed text-muted">
+              Prazno = slika nije dugme. Za stranicu na sajtu upiši{' '}
+              <span className="font-mono text-ink">/proizvodi</span>, za tuđi sajt celu adresu sa{' '}
+              <span className="font-mono text-ink">https://</span>.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id="hero-link"
+                type="text"
+                value={link}
+                onChange={(e) => {
+                  setLink(e.target.value);
+                  setMsg(null);
+                }}
+                placeholder="/proizvodi"
+                spellCheck={false}
+                className="w-full rounded-card border border-line bg-canvas px-3 py-2.5 font-body text-[14px] text-ink focus:border-ink focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => void saveLink()}
+                disabled={busy || link.trim() === savedLink.trim()}
+                className="shrink-0 rounded-card border border-ink bg-ink px-5 py-2.5 font-body text-[12px] uppercase tracking-[0.12em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-40"
+              >
+                Sačuvaj link
+              </button>
+            </div>
+          </div>
 
           {msg ? (
             <p className={`mt-3 font-body text-[13px] ${msg.ok ? 'text-accent' : 'text-danger'}`}>

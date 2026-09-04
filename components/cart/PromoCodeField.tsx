@@ -44,7 +44,7 @@ export default function PromoCodeField() {
 
   return (
     <div className="border border-line bg-surface p-4 md:p-5">
-      <label htmlFor="promo-code" className="block font-body text-[13px] font-medium text-ink">
+      <label htmlFor="promo-code" className="block font-body text-[14px] font-medium text-ink">
         Promo kod
       </label>
       <div className="mt-2 flex gap-2">
@@ -70,23 +70,23 @@ export default function PromoCodeField() {
           type="button"
           onClick={() => void apply()}
           disabled={checking}
-          className="shrink-0 rounded-card border border-ink bg-ink px-5 py-3 font-body text-[12px] uppercase tracking-[0.1em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
+          className="shrink-0 rounded-card border border-ink bg-ink px-5 py-3 font-body text-[13px] uppercase tracking-[0.1em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:opacity-50"
         >
           {checking ? '…' : 'Proveri'}
         </button>
       </div>
 
       {error ? (
-        <p className="mt-2 font-body text-[13px] text-danger" role="alert">
+        <p className="mt-2 font-body text-[14px] text-danger" role="alert">
           {error}
         </p>
       ) : promoCode && promoDiscountPercent != null ? (
-        <p className="mt-2 font-body text-[13px] text-accent">
+        <p className="mt-2 font-body text-[14px] text-accent">
           Kod <span className="font-mono text-ink">{promoCode}</span> — popust{' '}
           {Math.round(promoDiscountPercent)}%
         </p>
       ) : (
-        <p className="mt-2 font-body text-[13px] text-muted">
+        <p className="mt-2 font-body text-[14px] text-muted">
           Imaš promo kod? Unesi ga i dobij popust na porudžbinu.
         </p>
       )}
@@ -99,7 +99,7 @@ export default function PromoCodeField() {
             setInput('');
             setError(null);
           }}
-          className="mt-1.5 font-body text-[11px] text-muted underline underline-offset-2 hover:text-ink"
+          className="mt-1.5 font-body text-[12px] text-muted underline underline-offset-2 hover:text-ink"
         >
           Ukloni kod
         </button>

@@ -12,7 +12,7 @@ export default function BrandLogo({ className = '' }: { className?: string }) {
       {SITE.logoSrc ? (
         <Image src={SITE.logoSrc} alt={SITE.brandName} width={132} height={28} priority />
       ) : (
-        <span className="font-display text-[19px] leading-none tracking-[0.02em] text-ink">
+        <span className="font-display text-[19px] leading-none tracking-[0.02em] text-[color:var(--nav-text)]">
           {SITE.brandName}
         </span>
       )}

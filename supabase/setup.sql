@@ -15,6 +15,11 @@
 --   0004_kategorije.sql
 --   0005_galerija_i_hero.sql
 --   0006_tekstovi_proizvoda.sql
+--   0007_boje_zaglavlja.sql
+--   0008_video_proizvoda.sql
+--   0009_instagram_objava.sql
+--   0010_salon_cenovnik.sql
+--   0011_hero_link_i_adresa.sql
 -- ═══════════════════════════════════════════════════════════════════
 
 -- ───────────────────────────────────────────────────────────────────
@@ -1144,5 +1149,388 @@ FROM (VALUES
 WHERE p.slug = c.slug
   AND c.shade <> ''
   AND p.name = c.name || ' — ' || c.shade;
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0007_boje_zaglavlja.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Boje zaglavlja (traka sa obaveštenjima + navigacija)
+--
+-- Zašto: boje su do sada živele u `app/globals.css`, pa je svaka promena
+-- tražila novi deploy. Sada stoje u `site_settings` i menjaju se iz
+-- admin panela → Podešavanja → Boje zaglavlja.
+--
+-- Vrednosti idu direktno u CSS, zato CHECK dozvoljava isključivo HEX.
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+ALTER TABLE public.site_settings
+  ADD COLUMN IF NOT EXISTS ticker_bg_color   TEXT NOT NULL DEFAULT '#FAF9F7',
+  ADD COLUMN IF NOT EXISTS ticker_text_color TEXT NOT NULL DEFAULT '#4B4843',
+  ADD COLUMN IF NOT EXISTS nav_bg_color      TEXT NOT NULL DEFAULT '#FFFFFF',
+  ADD COLUMN IF NOT EXISTS nav_text_color    TEXT NOT NULL DEFAULT '#171614',
+  ADD COLUMN IF NOT EXISTS nav_border_color  TEXT NOT NULL DEFAULT '#E7E4DF';
+
+DO $$
+DECLARE
+  col TEXT;
+BEGIN
+  FOREACH col IN ARRAY ARRAY[
+    'ticker_bg_color', 'ticker_text_color',
+    'nav_bg_color', 'nav_text_color', 'nav_border_color'
+  ] LOOP
+    EXECUTE format(
+      'ALTER TABLE public.site_settings DROP CONSTRAINT IF EXISTS site_settings_%s_hex',
+      col
+    );
+    EXECUTE format(
+      'ALTER TABLE public.site_settings ADD CONSTRAINT site_settings_%s_hex CHECK (%I ~* ''^#([0-9a-f]{3}|[0-9a-f]{6})$'')',
+      col, col
+    );
+  END LOOP;
+END $$;
+
+COMMENT ON COLUMN public.site_settings.ticker_bg_color IS
+  'HEX pozadine trake sa obaveštenjima na vrhu sajta.';
+COMMENT ON COLUMN public.site_settings.ticker_text_color IS
+  'HEX teksta u traci sa obaveštenjima.';
+COMMENT ON COLUMN public.site_settings.nav_bg_color IS
+  'HEX pozadine navigacije (logo, meni, korpa).';
+COMMENT ON COLUMN public.site_settings.nav_text_color IS
+  'HEX logotipa, linkova i ikonice korpe.';
+COMMENT ON COLUMN public.site_settings.nav_border_color IS
+  'HEX linije koja deli zaglavlje od sadržaja.';
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0008_video_proizvoda.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Video klipovi proizvoda
+--
+-- Zašto: uz fotografije pakovanja klijentkinja hoće i kratke snimke rada
+-- na noktima. Snimak sa telefona je 50–200 MB, a Supabase free plan daje
+-- 1 GB prostora i 5 GB protoka mesečno — zato admin panel svaki klip pre
+-- slanja prebaci u H.264 MP4, skrati stranicu na najviše 1280 px, baci
+-- zvuk i ograniči trajanje. Ovde je samo gornja brana: bucket odbija sve
+-- preko 25 MB i sve što nije MP4 (ili poster slika uz njega).
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+-- ── 1. Tabela klipova ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.product_videos (
+  id SERIAL PRIMARY KEY,
+  product_slug TEXT NOT NULL
+    REFERENCES public.products (slug) ON DELETE CASCADE ON UPDATE CASCADE,
+  -- Javni URL MP4 fajla iz bucket-a `product-videos`.
+  url TEXT NOT NULL CHECK (length(btrim(url)) > 0),
+  -- Prvi kadar, u WebP-u. Prikazuje se dok kupac ne klikne „pusti",
+  -- pa se sam video ne skida bez potrebe (štedi protok).
+  poster_url TEXT NOT NULL DEFAULT '',
+  -- Trajanje posle obrade, u sekundama — panel ga prikazuje uz klip.
+  duration_seconds NUMERIC(6, 2),
+  -- Veličina gotovog fajla u bajtovima; služi za procenu potrošnje.
+  size_bytes BIGINT,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (product_slug, url)
+);
+
+COMMENT ON TABLE public.product_videos IS
+  'Kratki klipovi proizvoda. Idu iza fotografija u galeriji; obrada je u browseru (lib/admin/videos.ts).';
+COMMENT ON COLUMN public.product_videos.poster_url IS
+  'Prvi kadar klipa. Prazno = galerija prikazuje sivi okvir dok se video ne pusti.';
+
+CREATE INDEX IF NOT EXISTS idx_product_videos_product
+  ON public.product_videos (product_slug, sort_order, id);
+
+ALTER TABLE public.product_videos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read product_videos" ON public.product_videos;
+CREATE POLICY "Public read product_videos"
+  ON public.product_videos FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "Admins manage product_videos" ON public.product_videos;
+CREATE POLICY "Admins manage product_videos"
+  ON public.product_videos FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+-- ── 2. Storage bucket ────────────────────────────────────────────
+-- Odvojen od `product-images` da bi imao svoj limit i da se potrošnja
+-- prostora na video zapisima vidi na prvi pogled u Supabase panelu.
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'product-videos',
+  'product-videos',
+  true,
+  26214400,                                 -- 25 MB po klipu
+  ARRAY['video/mp4', 'image/webp', 'image/jpeg']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public             = EXCLUDED.public,
+  file_size_limit    = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+DROP POLICY IF EXISTS "Public read product videos" ON storage.objects;
+CREATE POLICY "Public read product videos"
+  ON storage.objects FOR SELECT
+  TO anon, authenticated
+  USING (bucket_id = 'product-videos');
+
+DROP POLICY IF EXISTS "Admins write product videos" ON storage.objects;
+CREATE POLICY "Admins write product videos"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'product-videos'
+    AND EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Admins update product videos" ON storage.objects;
+CREATE POLICY "Admins update product videos"
+  ON storage.objects FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'product-videos'
+    AND EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Admins delete product videos" ON storage.objects;
+CREATE POLICY "Admins delete product videos"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'product-videos'
+    AND EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid())
+  );
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0009_instagram_objava.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Link ka Instagram objavi proizvoda
+--
+-- Zašto: klijentkinja radove objavljuje na Instagramu, pa uz proizvod
+-- treba diskretna veza ka toj objavi. Unosi se iz admin panela
+-- (Proizvodi → uredi proizvod), prazno = ikonica se ne prikazuje.
+--
+-- CHECK dozvoljava samo instagram.com adrese preko https — polje ide
+-- pravo u `href`, pa ovde stoji brana protiv slučajnog `javascript:`
+-- ili tuđeg domena.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+ALTER TABLE public.products
+  ADD COLUMN IF NOT EXISTS instagram_url TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE public.products
+  DROP CONSTRAINT IF EXISTS products_instagram_url_check;
+
+ALTER TABLE public.products
+  ADD CONSTRAINT products_instagram_url_check
+  CHECK (
+    instagram_url = ''
+    OR instagram_url ~* '^https://([a-z0-9-]+\.)?instagram\.com/[^\s]*$'
+  );
+
+COMMENT ON COLUMN public.products.instagram_url IS
+  'Link ka Instagram objavi ili profilu. Prazno = ikonica se ne prikazuje uz proizvod.';
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0010_salon_cenovnik.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Salon: cenovnik, fotografija i telefon
+--
+-- Zašto: stranica „Usluge" i sekcija salona na početnoj do sada su čitale
+-- `lib/data/services.ts` i `lib/site-config.ts` — svaka izmena je tražila
+-- novi deploy. Sada oboje čitaju iz baze, a klijentkinja menja naslove,
+-- cene, sliku i broj telefona iz admin panela (Podešavanja → Salon).
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+-- ── 1. Grupe usluga ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.service_groups (
+  slug TEXT PRIMARY KEY,
+  title TEXT NOT NULL CHECK (length(btrim(title)) > 0),
+  intro TEXT NOT NULL DEFAULT '',
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.service_groups IS
+  'Grupe u cenovniku salona (npr. „Nega lica"). Redosled prikaza ide po sort_order.';
+
+ALTER TABLE public.service_groups ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read service_groups" ON public.service_groups;
+CREATE POLICY "Public read service_groups"
+  ON public.service_groups FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "Admins manage service_groups" ON public.service_groups;
+CREATE POLICY "Admins manage service_groups"
+  ON public.service_groups FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+-- ── 2. Stavke cenovnika ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.services (
+  id SERIAL PRIMARY KEY,
+  group_slug TEXT NOT NULL
+    REFERENCES public.service_groups (slug) ON DELETE CASCADE ON UPDATE CASCADE,
+  name TEXT NOT NULL CHECK (length(btrim(name)) > 0),
+  description TEXT NOT NULL DEFAULT '',
+  -- NULL = trajanje se ne prikazuje uz uslugu.
+  duration_minutes INT CHECK (duration_minutes IS NULL OR duration_minutes > 0),
+  -- NULL = „Cena na upit".
+  price_rsd NUMERIC(12, 2) CHECK (price_rsd IS NULL OR price_rsd >= 0),
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON COLUMN public.services.price_rsd IS
+  'Cena u dinarima. NULL = na sajtu piše „Cena na upit".';
+
+CREATE INDEX IF NOT EXISTS idx_services_group
+  ON public.services (group_slug, sort_order, id);
+
+ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read services" ON public.services;
+CREATE POLICY "Public read services"
+  ON public.services FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "Admins manage services" ON public.services;
+CREATE POLICY "Admins manage services"
+  ON public.services FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+-- ── 3. Fotografija salona, telefon i uvodni tekstovi ─────────────
+
+ALTER TABLE public.site_settings
+  ADD COLUMN IF NOT EXISTS salon_image_path TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS salon_phone      TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS salon_title      TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS salon_intro      TEXT NOT NULL DEFAULT '';
+
+COMMENT ON COLUMN public.site_settings.salon_image_path IS
+  'Fotografija salona; ista se koristi na „Uslugama" i u sekciji salona na početnoj.';
+COMMENT ON COLUMN public.site_settings.salon_phone IS
+  'Broj za zakazivanje. Prazno = koristi se broj iz lib/site-config.ts.';
+
+UPDATE public.site_settings
+SET salon_phone = '0692510146'
+WHERE id = 1 AND btrim(salon_phone) = '';
+
+-- ── 4. Početni cenovnik ──────────────────────────────────────────
+-- Prepisan iz `lib/data/services.ts` da stranica ne ostane prazna;
+-- sve se menja iz admin panela.
+
+INSERT INTO public.service_groups (slug, title, intro, sort_order)
+VALUES
+  ('nega-lica', 'Nega lica', 'Placeholder tekst o tretmanima lica koje radite u salonu.', 1),
+  ('tretmani-tela', 'Tretmani tela', 'Placeholder tekst o tretmanima tela.', 2),
+  ('depilacija', 'Depilacija', 'Placeholder tekst o depilaciji.', 3)
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO public.services (group_slug, name, description, duration_minutes, price_rsd, sort_order)
+SELECT v.group_slug, v.name, v.description, v.duration_minutes, v.price_rsd, v.sort_order
+FROM (VALUES
+  ('nega-lica', 'Osnovni tretman lica', 'Kratak opis tretmana.', 45, 2500, 1),
+  ('nega-lica', 'Dubinsko čišćenje', 'Kratak opis tretmana.', 60, 3500, 2),
+  ('nega-lica', 'Hidratantni tretman', '', 60, 3800, 3),
+  ('nega-lica', 'Anti-age tretman', '', 75, 4500, 4),
+  ('tretmani-tela', 'Relax masaža (30 min)', '', 30, 2200, 1),
+  ('tretmani-tela', 'Relax masaža (60 min)', '', 60, 3600, 2),
+  ('tretmani-tela', 'Piling tela', '', 45, 2800, 3),
+  ('depilacija', 'Potkolenice', '', 20, 1200, 1),
+  ('depilacija', 'Cele noge', '', 40, 2000, 2),
+  ('depilacija', 'Pazuh', '', 15, 800, 3)
+) AS v(group_slug, name, description, duration_minutes, price_rsd, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM public.services);
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0011_hero_link_i_adresa.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Link na hero slici + adresa salona iz admina
+--
+-- Zašto:
+--  1) Velika slika na početnoj treba da bude klikabilna — vodi tamo gde
+--     klijentkinja odredi (npr. na liniju proizvoda ili na Instagram).
+--  2) Adresa je do sada živela u `lib/site-config.ts`, pa se menjala samo
+--     deployom. Sada stoji uz telefon, a „Kontakt" i footer čitaju isto.
+--
+-- `hero_link_url` ide pravo u `href`, zato CHECK dozvoljava samo internu
+-- putanju (`/nesto`) ili http(s) adresu — nikad `javascript:`.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+ALTER TABLE public.site_settings
+  ADD COLUMN IF NOT EXISTS hero_link_url  TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS salon_address  TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS salon_city     TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE public.site_settings
+  DROP CONSTRAINT IF EXISTS site_settings_hero_link_url_check;
+
+ALTER TABLE public.site_settings
+  ADD CONSTRAINT site_settings_hero_link_url_check
+  CHECK (
+    hero_link_url = ''
+    OR hero_link_url ~ '^(/|https?://)[^\s]*$'
+  );
+
+COMMENT ON COLUMN public.site_settings.hero_link_url IS
+  'Gde vodi klik na hero sliku. Interna putanja (/proizvodi) ili puna adresa. Prazno = slika nije link.';
+COMMENT ON COLUMN public.site_settings.salon_address IS
+  'Ulica i broj. Prazno = koristi se vrednost iz lib/site-config.ts.';
+COMMENT ON COLUMN public.site_settings.salon_city IS
+  'Poštanski broj i grad. Prazno = koristi se vrednost iz lib/site-config.ts.';
 
 COMMIT;

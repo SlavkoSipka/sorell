@@ -6,6 +6,12 @@ import { invalidatePricingCache } from '@/lib/use-pricing-data';
 import { BUNDLE_DEFINITIONS } from '@/lib/pricing-engine';
 import { getBundleBySlug } from '@/lib/data/products';
 import AdminHeroImage from '@/components/admin/AdminHeroImage';
+import HeaderThemeEditor from '@/components/admin/HeaderThemeEditor';
+import AdminSalonSection, {
+  type AdminServiceGroupRow,
+  type AdminServiceRow,
+} from '@/components/admin/AdminSalonSection';
+import type { HeaderTheme } from '@/lib/theme';
 
 export type DiscountCodeRow = {
   id: number;
@@ -16,9 +22,20 @@ export type DiscountCodeRow = {
 };
 
 type Props = {
+  initialTheme: HeaderTheme;
+  initialSalonImage: string;
+  initialSalonPhone: string;
+  initialSalonTitle: string;
+  initialSalonIntro: string;
+  initialSalonAddress: string;
+  initialSalonCity: string;
+  initialServiceGroups: AdminServiceGroupRow[];
+  initialServices: AdminServiceRow[];
+  salonMissing: boolean;
   initialSiteDiscount: number;
   initialBundleDiscount: number;
   initialHeroImage: string;
+  initialHeroLink: string;
   initialCodes: DiscountCodeRow[];
   codesError: string | null;
 };
@@ -30,9 +47,20 @@ function parsePct(raw: string): number | null {
 }
 
 export default function AdminPodesavanjaClient({
+  initialTheme,
+  initialSalonImage,
+  initialSalonPhone,
+  initialSalonTitle,
+  initialSalonIntro,
+  initialSalonAddress,
+  initialSalonCity,
+  initialServiceGroups,
+  initialServices,
+  salonMissing,
   initialSiteDiscount,
   initialBundleDiscount,
   initialHeroImage,
+  initialHeroLink,
   initialCodes,
   codesError,
 }: Props) {
@@ -155,7 +183,21 @@ export default function AdminPodesavanjaClient({
         </p>
       </div>
 
-      <AdminHeroImage initialUrl={initialHeroImage} />
+      <AdminHeroImage initialUrl={initialHeroImage} initialLink={initialHeroLink} />
+
+      <HeaderThemeEditor initialTheme={initialTheme} />
+
+      <AdminSalonSection
+        initialImage={initialSalonImage}
+        initialPhone={initialSalonPhone}
+        initialTitle={initialSalonTitle}
+        initialIntro={initialSalonIntro}
+        initialAddress={initialSalonAddress}
+        initialCity={initialSalonCity}
+        initialGroups={initialServiceGroups}
+        initialServices={initialServices}
+        missing={salonMissing}
+      />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="border border-line bg-canvas p-5 md:p-6">
@@ -351,15 +393,12 @@ export default function AdminPodesavanjaClient({
         <h3 className="font-display text-[18px] text-ink">Sadržaj sajta</h3>
         <ul className="mt-3 space-y-1.5 font-body text-[13px] leading-relaxed text-muted">
           <li>
-            Naziv brenda, logo, adresa, radno vreme i traka sa obaveštenjima:{' '}
+            Naziv brenda, logo, adresa, radno vreme i tekst poruka u traci:{' '}
             <span className="font-mono text-ink">lib/site-config.ts</span>
           </li>
           <li>
             Proizvodi (nazivi, opisi, sastojci, slike):{' '}
             <span className="font-mono text-ink">lib/data/products.ts</span>
-          </li>
-          <li>
-            Cenovnik usluga salona: <span className="font-mono text-ink">lib/data/services.ts</span>
           </li>
           <li>
             Poštarina i prag besplatne dostave:{' '}

@@ -30,6 +30,9 @@ export const ACCEPTED_IMAGE_TYPES = [
 export const TARGET_RATIO = 4 / 5;
 /** Najveća visina izlaza; širina se računa iz odnosa. */
 export const TARGET_HEIGHT = 1250;
+/** Fotografija salona stoji u širem okviru (3:2) i na „Uslugama" i na početnoj. */
+export const SALON_RATIO = 3 / 2;
+export const SALON_HEIGHT = 900;
 /** Kvalitet WebP-a — 0.82 je granica ispod koje se gubitak vidi na koži i noktima. */
 const WEBP_QUALITY = 0.82;
 
@@ -63,7 +66,11 @@ export type ProcessedImage = { blob: Blob; ext: string };
  * Safari), pada na JPEG — nikad ne vraća neobrađen original, jer bi tada
  * fotografija sa telefona probila limit bucket-a.
  */
-export async function processImage(file: File): Promise<ProcessedImage | null> {
+export async function processImage(
+  file: File,
+  ratio: number = TARGET_RATIO,
+  maxHeight: number = TARGET_HEIGHT,
+): Promise<ProcessedImage | null> {
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -74,22 +81,22 @@ export async function processImage(file: File): Promise<ProcessedImage | null> {
 
   const srcRatio = bitmap.width / bitmap.height;
 
-  // Isečak je najveći pravougaonik 4:5 koji staje u original.
+  // Isečak je najveći pravougaonik traženog odnosa koji staje u original.
   let cropW: number;
   let cropH: number;
-  if (srcRatio > TARGET_RATIO) {
+  if (srcRatio > ratio) {
     cropH = bitmap.height;
-    cropW = cropH * TARGET_RATIO;
+    cropW = cropH * ratio;
   } else {
     cropW = bitmap.width;
-    cropH = cropW / TARGET_RATIO;
+    cropH = cropW / ratio;
   }
   const sx = (bitmap.width - cropW) / 2;
   const sy = (bitmap.height - cropH) / 2;
 
   // Ne uvećavaj preko originala — samo smanjuj kad je slika veća od potrebnog.
-  const outH = Math.max(1, Math.round(Math.min(TARGET_HEIGHT, cropH)));
-  const outW = Math.max(1, Math.round(outH * TARGET_RATIO));
+  const outH = Math.max(1, Math.round(Math.min(maxHeight, cropH)));
+  const outW = Math.max(1, Math.round(outH * ratio));
 
   const canvas = document.createElement('canvas');
   canvas.width = outW;

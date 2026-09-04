@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 type Variant = 'filled' | 'outline' | 'ghost';
 
 const base =
-  'inline-flex items-center justify-center rounded-card font-body font-medium text-[11px] uppercase tracking-[0.14em] transition-colors duration-200 disabled:opacity-50 disabled:pointer-events-none';
+  'inline-flex items-center justify-center rounded-card font-body font-medium text-[12px] uppercase tracking-[0.14em] transition-colors duration-200 disabled:opacity-50 disabled:pointer-events-none';
 
 const variants: Record<Variant, string> = {
   filled: 'border border-ink bg-ink text-canvas hover:bg-canvas hover:text-ink',

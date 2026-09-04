@@ -4,14 +4,14 @@ import { getProductOverrides } from '@/lib/products-server';
 import { SITE } from '@/lib/site-config';
 
 export default async function Hero() {
-  // Slika se kači iz admina (Podešavanja → Hero slika); prazno = placeholder okvir.
-  const { heroImage } = await getProductOverrides();
+  // Slika i link se kače iz admina (Podešavanja → Hero slika).
+  const { heroImage, heroLink } = await getProductOverrides();
 
   return (
     <section className="border-b border-line">
       <div className="mx-auto grid max-w-[1200px] items-center gap-10 px-5 py-14 md:grid-cols-2 md:gap-16 md:px-8 md:py-20">
         <div data-reveal="true">
-          <p className="font-body text-[10px] uppercase tracking-[0.2em] text-muted">
+          <p className="font-body text-[11px] uppercase tracking-[0.2em] text-muted">
             {SITE.tagline}
           </p>
           <h1 className="mt-4 font-display text-[38px] leading-[1.08] text-ink md:text-[54px]">
@@ -27,28 +27,49 @@ export default async function Hero() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/proizvodi"
-              className="rounded-card border border-ink bg-ink px-7 py-3.5 font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
+              className="rounded-card border border-ink bg-ink px-7 py-3.5 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
             >
               Pogledaj proizvode
             </Link>
             <Link
               href="/usluge"
-              className="rounded-card border border-line-strong px-7 py-3.5 font-body text-[11px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
+              className="rounded-card border border-line-strong px-7 py-3.5 font-body text-[12px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
             >
               Usluge salona
             </Link>
           </div>
         </div>
 
-        <div data-reveal="true" data-reveal-delay="120">
-          <Media
-            src={heroImage}
-            alt="Glavna fotografija"
-            ratio="4 / 5"
-            label="Hero slika · preporuka 1200×1500"
-            priority
-            sizes="(max-width: 768px) 100vw, 50vw"
-          />
+        {/* Na telefonu slika ide iznad teksta; na kompu ostaje desno. */}
+        <div className="order-first md:order-none" data-reveal="true" data-reveal-delay="120">
+          {heroLink ? (
+            <Link
+              href={heroLink}
+              className="block transition-opacity hover:opacity-90"
+              aria-label="Otvori istaknutu ponudu"
+              {...(heroLink.startsWith('/')
+                ? {}
+                : { target: '_blank', rel: 'noopener noreferrer' })}
+            >
+              <Media
+                src={heroImage}
+                alt="Glavna fotografija"
+                ratio="4 / 5"
+                label="Hero slika · preporuka 1200×1500"
+                priority
+                sizes="(max-width: 768px) 100vw, 50vw"
+              />
+            </Link>
+          ) : (
+            <Media
+              src={heroImage}
+              alt="Glavna fotografija"
+              ratio="4 / 5"
+              label="Hero slika · preporuka 1200×1500"
+              priority
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+          )}
         </div>
       </div>
     </section>

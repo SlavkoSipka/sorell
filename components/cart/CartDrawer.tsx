@@ -55,7 +55,7 @@ export default function CartDrawer() {
             <Link
               href="/proizvodi"
               onClick={closeCart}
-              className="rounded-card border border-ink bg-ink px-6 py-3 font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
+              className="rounded-card border border-ink bg-ink px-6 py-3 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
             >
               Pogledaj proizvode
             </Link>
@@ -68,9 +68,9 @@ export default function CartDrawer() {
 
             <div className="space-y-4 border-t border-line px-5 py-5">
               {pricing.freeShipping ? (
-                <p className="font-body text-[12px] text-accent">{FREE_SHIPPING_THRESHOLD_LABEL}</p>
+                <p className="font-body text-[13px] text-accent">{FREE_SHIPPING_THRESHOLD_LABEL}</p>
               ) : (
-                <p className="font-body text-[12px] text-muted">
+                <p className="font-body text-[13px] text-muted">
                   Još {formatRsd(missingForFreeShipping)} do besplatne dostave.
                 </p>
               )}
@@ -81,14 +81,14 @@ export default function CartDrawer() {
                 <Link
                   href="/porudzbina"
                   onClick={closeCart}
-                  className="rounded-card border border-ink bg-ink py-3 text-center font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
+                  className="rounded-card border border-ink bg-ink py-3 text-center font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
                 >
                   Nastavi na porudžbinu
                 </Link>
                 <Link
                   href="/korpa"
                   onClick={closeCart}
-                  className="rounded-card border border-line-strong py-3 text-center font-body text-[11px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
+                  className="rounded-card border border-line-strong py-3 text-center font-body text-[12px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
                 >
                   Pregled korpe
                 </Link>

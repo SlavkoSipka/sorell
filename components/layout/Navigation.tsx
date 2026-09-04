@@ -22,7 +22,7 @@ function CartButton({ className = '', onBeforeOpen }: { className?: string; onBe
         onBeforeOpen?.();
         openCart();
       }}
-      className={`relative inline-flex items-center justify-center text-ink transition-opacity hover:opacity-60 ${className}`}
+      className={`relative inline-flex items-center justify-center text-[color:var(--nav-text)] transition-opacity hover:opacity-60 ${className}`}
       aria-label={`Korpa${itemCount > 0 ? `, ${itemCount} stavki` : ''}`}
     >
       <svg
@@ -40,7 +40,7 @@ function CartButton({ className = '', onBeforeOpen }: { className?: string; onBe
         <path d="M4 9h16l-1.2 12H5.2L4 9z" />
       </svg>
       {itemCount > 0 ? (
-        <span className="absolute -right-2 -top-1.5 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full bg-ink px-[5px] font-body text-[10px] font-medium leading-none text-canvas">
+        <span className="absolute -right-2 -top-1.5 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[color:var(--nav-text)] px-[5px] font-body text-[11px] font-medium leading-none text-[color:var(--nav-bg)]">
           {itemCount > 99 ? '99+' : itemCount}
         </span>
       ) : null}
@@ -53,9 +53,9 @@ export default function Navigation() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 bg-canvas">
+      <header className="fixed inset-x-0 top-0 z-50 bg-[color:var(--nav-bg)]">
         <AnnouncementTicker />
-        <nav className="h-16 border-b border-line">
+        <nav className="h-16 border-b border-[color:var(--nav-border)]">
           <div className="relative mx-auto flex h-full max-w-[1200px] items-center justify-between px-5 md:px-8">
             <div className="flex w-8 shrink-0 items-center md:w-auto">
               <button
@@ -65,9 +65,9 @@ export default function Navigation() {
                 aria-label="Otvori meni"
                 aria-expanded={mobileOpen}
               >
-                <span className={`block h-px w-5 bg-ink transition-transform duration-200 ${mobileOpen ? 'translate-y-[3px] rotate-45' : ''}`} />
-                <span className={`block h-px w-5 bg-ink transition-opacity duration-200 ${mobileOpen ? 'opacity-0' : ''}`} />
-                <span className={`block h-px w-5 bg-ink transition-transform duration-200 ${mobileOpen ? '-translate-y-[3px] -rotate-45' : ''}`} />
+                <span className={`block h-px w-5 bg-[color:var(--nav-text)] transition-transform duration-200 ${mobileOpen ? 'translate-y-[3px] rotate-45' : ''}`} />
+                <span className={`block h-px w-5 bg-[color:var(--nav-text)] transition-opacity duration-200 ${mobileOpen ? 'opacity-0' : ''}`} />
+                <span className={`block h-px w-5 bg-[color:var(--nav-text)] transition-transform duration-200 ${mobileOpen ? '-translate-y-[3px] -rotate-45' : ''}`} />
               </button>
               <div className="hidden md:block">
                 <BrandLogo />
@@ -84,7 +84,7 @@ export default function Navigation() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="link-underline font-body text-[11px] uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-ink"
+                  className="link-underline font-body text-[12px] uppercase tracking-[0.14em] text-[color:var(--nav-text-soft)] transition-colors hover:text-[color:var(--nav-text)]"
                 >
                   {link.label}
                 </Link>
@@ -101,7 +101,7 @@ export default function Navigation() {
 
       {/* Overlay */}
       <div
-        className={`fixed inset-0 z-40 bg-ink/20 transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 z-40 bg-[color:var(--nav-overlay)] transition-opacity duration-300 md:hidden ${
           mobileOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
         onClick={() => setMobileOpen(false)}
@@ -109,7 +109,7 @@ export default function Navigation() {
 
       {/* Mobilni meni */}
       <div
-        className={`fixed right-0 top-0 z-50 h-full w-[278px] border-l border-line bg-canvas transition-transform duration-300 ease-out md:hidden ${
+        className={`fixed right-0 top-0 z-50 h-full w-[278px] border-l border-[color:var(--nav-border)] bg-[color:var(--nav-bg)] text-[color:var(--nav-text)] transition-transform duration-300 ease-out md:hidden ${
           mobileOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -131,13 +131,13 @@ export default function Navigation() {
               key={link.href}
               href={link.href}
               onClick={() => setMobileOpen(false)}
-              className="font-body text-[13px] uppercase tracking-[0.14em] text-ink-soft"
+              className="font-body text-[14px] uppercase tracking-[0.14em] text-[color:var(--nav-text-soft)]"
             >
               {link.label}
             </Link>
           ))}
-          <div className="mt-3 flex items-center justify-between gap-4 border-t border-line pt-6">
-            <span className="font-body text-[11px] uppercase tracking-[0.14em] text-ink-soft">Korpa</span>
+          <div className="mt-3 flex items-center justify-between gap-4 border-t border-[color:var(--nav-border)] pt-6">
+            <span className="font-body text-[12px] uppercase tracking-[0.14em] text-[color:var(--nav-text-soft)]">Korpa</span>
             <CartButton onBeforeOpen={() => setMobileOpen(false)} />
           </div>
         </div>

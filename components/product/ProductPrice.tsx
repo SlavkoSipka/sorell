@@ -9,7 +9,7 @@ import { getProductBySlug, variantKey } from '@/lib/data/products';
 import { effectiveDiscountPercent, usePricingData } from '@/lib/use-pricing-data';
 
 const SIZES = {
-  sm: 'text-[13px]',
+  sm: 'text-[14px]',
   md: 'text-[15px]',
   lg: 'text-[20px]',
 } as const;
@@ -38,15 +38,15 @@ function PriceBody({
   return (
     <span className="inline-flex flex-wrap items-baseline gap-2">
       {prefix ? (
-        <span className="font-body text-[11px] uppercase tracking-[0.12em] text-muted">{prefix}</span>
+        <span className="font-body text-[12px] uppercase tracking-[0.12em] text-muted">{prefix}</span>
       ) : null}
       <span className={`font-body ${SIZES[size]} tabular-nums text-ink`}>{formatRsd(final)}</span>
       {percent > 0 ? (
         <>
-          <span className="font-body text-[12px] tabular-nums text-muted line-through">
+          <span className="font-body text-[13px] tabular-nums text-muted line-through">
             {formatRsd(base)}
           </span>
-          <span className="rounded-card bg-accent-soft px-1.5 py-0.5 font-body text-[10px] uppercase tracking-[0.1em] text-accent">
+          <span className="rounded-card bg-accent-soft px-1.5 py-0.5 font-body text-[11px] uppercase tracking-[0.1em] text-accent">
             −{Math.round(percent)}%
           </span>
         </>

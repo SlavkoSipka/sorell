@@ -45,7 +45,7 @@ export default function Media({
         />
       ) : (
         <div className="image-placeholder absolute inset-0 flex items-center justify-center">
-          <span className="px-3 text-center font-body text-[10px] uppercase tracking-[0.18em] text-muted">
+          <span className="px-3 text-center font-body text-[11px] uppercase tracking-[0.18em] text-muted">
             {label ?? alt}
           </span>
         </div>

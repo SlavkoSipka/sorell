@@ -13,7 +13,7 @@ import { SHIPPING_CARRIER } from '@/lib/shipping';
 
 const fieldInput =
   'w-full rounded-card border border-line-strong bg-canvas px-4 py-3 font-body text-[15px] text-ink placeholder:text-muted focus:border-ink focus:outline-none transition-colors';
-const fieldLabel = 'block font-body text-[13px] font-medium text-ink mb-1.5';
+const fieldLabel = 'block font-body text-[14px] font-medium text-ink mb-1.5';
 
 export default function PorudzbinaClient() {
   const router = useRouter();
@@ -84,7 +84,7 @@ export default function PorudzbinaClient() {
           </p>
           <Link
             href="/proizvodi"
-            className="mt-7 inline-flex rounded-card border border-ink bg-ink px-6 py-3 font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
+            className="mt-7 inline-flex rounded-card border border-ink bg-ink px-6 py-3 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink"
           >
             Pogledaj proizvode
           </Link>
@@ -234,12 +234,12 @@ export default function PorudzbinaClient() {
             <button
               type="submit"
               disabled={loading || !pricing.loaded || pricing.hasUnpricedItems}
-              className="w-full rounded-card border border-ink bg-ink py-4 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:pointer-events-none disabled:opacity-50"
+              className="w-full rounded-card border border-ink bg-ink py-4 font-body text-[13px] uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-canvas hover:text-ink disabled:pointer-events-none disabled:opacity-50"
             >
               {loading ? 'Šaljem…' : 'Pošalji porudžbinu'}
             </button>
 
-            <p className="font-body text-[12px] leading-relaxed text-muted">
+            <p className="font-body text-[13px] leading-relaxed text-muted">
               Plaćanje je pouzećem — iznos se plaća kuriru pri preuzimanju.
             </p>
           </form>
@@ -254,12 +254,12 @@ export default function PorudzbinaClient() {
                     <Media src={line.image} alt={line.name} ratio="4 / 5" label="Slika" sizes="40px" fit="contain" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-body text-[13px] leading-snug text-ink">{line.name}</p>
-                    <p className="mt-0.5 font-body text-[12px] tabular-nums text-muted">
+                    <p className="font-body text-[14px] leading-snug text-ink">{line.name}</p>
+                    <p className="mt-0.5 font-body text-[13px] tabular-nums text-muted">
                       {formatRsd(pricing.unitPriceRsd(line))} × {line.quantity}
                     </p>
                   </div>
-                  <p className="shrink-0 font-body text-[13px] tabular-nums text-ink">
+                  <p className="shrink-0 font-body text-[14px] tabular-nums text-ink">
                     {formatRsd(pricing.lineTotalRsd(line))}
                   </p>
                 </li>

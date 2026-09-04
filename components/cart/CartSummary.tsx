@@ -64,13 +64,13 @@ export default function CartSummary({
       ) : null}
 
       {pricing.hasUnpricedItems ? (
-        <p className="border-t border-line pt-3 font-body text-[12px] leading-relaxed text-danger">
+        <p className="border-t border-line pt-3 font-body text-[13px] leading-relaxed text-danger">
           Za neke stavke cena još nije objavljena — uklonite ih iz korpe da biste nastavili.
         </p>
       ) : null}
 
       <div className="flex items-end justify-between gap-2 border-t border-line pt-3">
-        <span className="font-body text-[12px] font-semibold uppercase tracking-[0.1em] text-ink">
+        <span className="font-body text-[13px] font-semibold uppercase tracking-[0.1em] text-ink">
           Ukupno
         </span>
         <span className="font-body text-[20px] font-semibold leading-none tabular-nums text-ink">
@@ -98,11 +98,11 @@ function Row({
 }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className={`font-body text-[13px] ${accent ? 'text-accent' : muted ? 'text-muted' : 'text-ink-soft'}`}>
+      <span className={`font-body text-[14px] ${accent ? 'text-accent' : muted ? 'text-muted' : 'text-ink-soft'}`}>
         {label}
       </span>
       <span
-        className={`font-body text-[13px] tabular-nums ${strike ? 'line-through text-muted' : accent ? 'text-accent' : 'text-ink'}`}
+        className={`font-body text-[14px] tabular-nums ${strike ? 'line-through text-muted' : accent ? 'text-accent' : 'text-ink'}`}
       >
         {value}
       </span>

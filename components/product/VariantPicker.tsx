@@ -64,7 +64,7 @@ export default function VariantPicker({
     <div>
       {product.variants.length > 1 ? (
         <fieldset>
-          <legend className="mb-2 font-body text-[10px] uppercase tracking-[0.16em] text-muted">
+          <legend className="mb-2 font-body text-[11px] uppercase tracking-[0.16em] text-muted">
             Pakovanje
           </legend>
           <div className="flex flex-wrap gap-2">
@@ -78,7 +78,7 @@ export default function VariantPicker({
                   onClick={() => setSelectedCode(v.code)}
                   disabled={disabled}
                   aria-pressed={active}
-                  className={`rounded-card border px-4 py-2.5 font-body text-[13px] tabular-nums transition-colors ${
+                  className={`rounded-card border px-4 py-2.5 font-body text-[14px] tabular-nums transition-colors ${
                     active
                       ? 'border-ink bg-ink text-canvas'
                       : 'border-line-strong bg-canvas text-ink hover:border-ink'
@@ -91,8 +91,8 @@ export default function VariantPicker({
           </div>
         </fieldset>
       ) : (
-        <p className="font-body text-[12px] text-muted">
-          <span className="uppercase tracking-[0.16em] text-[10px]">Pakovanje</span>
+        <p className="font-body text-[13px] text-muted">
+          <span className="uppercase tracking-[0.16em] text-[11px]">Pakovanje</span>
           <span className="px-2">·</span>
           {product.variants[0]?.label}
         </p>
@@ -109,7 +109,7 @@ export default function VariantPicker({
                 <span className="font-body text-[14px] tabular-nums text-muted line-through">
                   {formatRsd(basePrice)}
                 </span>
-                <span className="rounded-card bg-accent-soft px-2 py-0.5 font-body text-[10px] uppercase tracking-[0.1em] text-accent">
+                <span className="rounded-card bg-accent-soft px-2 py-0.5 font-body text-[11px] uppercase tracking-[0.1em] text-accent">
                   −{Math.round(percent)}%
                 </span>
               </>
@@ -122,7 +122,7 @@ export default function VariantPicker({
 
       <div className="mt-5">
         {!isAvailable ? (
-          <p className="rounded-card border border-line bg-surface px-5 py-3.5 text-center font-body text-[12px] uppercase tracking-[0.12em] text-muted">
+          <p className="rounded-card border border-line bg-surface px-5 py-3.5 text-center font-body text-[13px] uppercase tracking-[0.12em] text-muted">
             Trenutno nije dostupno
           </p>
         ) : (
@@ -131,12 +131,12 @@ export default function VariantPicker({
               type="button"
               onClick={add}
               disabled={!canBuy}
-              className="w-full rounded-card border border-ink bg-ink px-6 py-3.5 font-body text-[11px] uppercase tracking-[0.14em] text-canvas transition-colors duration-200 hover:bg-canvas hover:text-ink disabled:cursor-not-allowed disabled:border-line disabled:bg-surface disabled:text-muted disabled:hover:bg-surface disabled:hover:text-muted"
+              className="w-full rounded-card border border-ink bg-ink px-6 py-3.5 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors duration-200 hover:bg-canvas hover:text-ink disabled:cursor-not-allowed disabled:border-line disabled:bg-surface disabled:text-muted disabled:hover:bg-surface disabled:hover:text-muted"
             >
               Dodaj u korpu
             </button>
             {loaded && !canBuy && selected && isVariantAvailable(selected) ? (
-              <p className="mt-2 font-body text-[12px] leading-relaxed text-muted">
+              <p className="mt-2 font-body text-[13px] leading-relaxed text-muted">
                 Cena za ovo pakovanje još nije objavljena. Za upit nas kontaktirajte.
               </p>
             ) : null}

@@ -49,7 +49,7 @@ export default async function ProductsGrid({
         <div className="mb-6 border-b border-line pb-3 md:mb-10 md:pb-4">
           <h3 className="font-display text-[22px] text-ink md:text-[26px]">{group.label}</h3>
           {/* Pakovanja se biraju na stranici proizvoda — u spisku su samo šum. */}
-          <p className="mt-1 font-body text-[12px] uppercase tracking-[0.14em] text-muted">
+          <p className="mt-1 font-body text-[13px] uppercase tracking-[0.14em] text-muted">
             {group.items.length} {group.items.length === 1 ? 'proizvod' : 'proizvoda'}
           </p>
         </div>
@@ -88,7 +88,7 @@ export default async function ProductsGrid({
             {showAllLink ? (
               <Link
                 href="/proizvodi"
-                className="link-underline font-body text-[11px] uppercase tracking-[0.14em] text-ink-soft hover:text-ink"
+                className="link-underline font-body text-[12px] uppercase tracking-[0.14em] text-ink-soft hover:text-ink"
               >
                 Svi proizvodi
               </Link>

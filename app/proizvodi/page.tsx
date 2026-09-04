@@ -21,7 +21,7 @@ export default function ProizvodiPage() {
             Gradivni gelovi, rubber base i završni sjajevi za profesionalan rad. Svaki proizvod
             dolazi u više pakovanja — pakovanje i cenu biraš na stranici proizvoda.
           </p>
-          <p className="mt-4 font-body text-[11px] uppercase tracking-[0.14em] text-accent">
+          <p className="mt-4 font-body text-[12px] uppercase tracking-[0.14em] text-accent">
             HEMA Free · Di-HEMA Free · TPO Free
           </p>
         </div>

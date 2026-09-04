@@ -7,13 +7,25 @@ import { discountedUnitPriceRsd, formatRsd } from '@/lib/price';
 import { placeholderImage } from '@/lib/data/product-images';
 import { processImage, rejectReason, removeImage, uploadProcessed } from '@/lib/admin/images';
 import ProductImagesField, { type AdminImageRow } from '@/components/admin/ProductImagesField';
+import ProductVideosField, {
+  type AdminVideoRow,
+  type VideoProgress,
+} from '@/components/admin/ProductVideosField';
+import {
+  MAX_OUTPUT_BYTES,
+  checkVideo,
+  formatBytes,
+  removeVideoFiles,
+  transcodeVideo,
+  uploadVideo,
+} from '@/lib/admin/videos';
 
 /** Koliko proizvoda stane u „Izdvojeno iz ponude" na početnoj. */
 const FEATURED_SLOTS = 8;
 /** Ključ grupe za proizvode koji ne pripadaju nijednoj kategoriji. */
 const UNASSIGNED = '__bez-kategorije__';
 
-export type { AdminImageRow };
+export type { AdminImageRow, AdminVideoRow };
 
 export type AdminCategoryRow = {
   slug: string;
@@ -36,6 +48,7 @@ export type AdminProductRow = {
   shade: string | null;
   features: string[] | null;
   how_to_use: string | null;
+  instagram_url: string | null;
   formulation: string | null;
   eu_compliance: string | null;
 };
@@ -60,6 +73,8 @@ type TextFields = {
   howToUse: string;
   formulation: string;
   euCompliance: string;
+  /** Link ka Instagram objavi; prazno = ikonica se ne prikazuje na sajtu. */
+  instagramUrl: string;
 };
 
 type RowState = TextFields & {
@@ -116,28 +131,42 @@ const BTN_PRIMARY =
 const BTN_QUIET =
   'inline-flex min-h-[40px] items-center justify-center rounded-card border border-line px-3 font-body text-[12px] text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-40';
 const CHECKBOX = 'h-[18px] w-[18px] shrink-0 accent-current';
+/**
+ * „Uredi proizvod" je najvažnija radnja u spisku — crno, visoko i preko cele
+ * širine kartice, da se na telefonu ne traži.
+ */
+const BTN_EDIT =
+  'inline-flex min-h-[52px] w-full items-center justify-between gap-3 rounded-card border border-ink bg-ink px-5 font-body text-[14px] font-semibold uppercase tracking-[0.08em] text-canvas transition-colors hover:bg-canvas hover:text-ink';
 
 export default function AdminProizvodiClient({
   initialProducts,
   initialVariants,
   initialCategories,
   initialImages,
+  initialVideos,
   categoriesMissing,
   imagesMissing,
+  videosMissing,
   siteDiscountPercent,
 }: {
   initialProducts: AdminProductRow[];
   initialVariants: AdminVariantRow[];
   initialCategories: AdminCategoryRow[];
   initialImages: AdminImageRow[];
+  initialVideos: AdminVideoRow[];
   categoriesMissing: boolean;
   imagesMissing: boolean;
+  /** Migracija 0008 nije pokrenuta — sekcija za klipove se tada ne prikazuje. */
+  videosMissing: boolean;
   siteDiscountPercent: number;
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [variants, setVariants] = useState(initialVariants);
   const [categories, setCategories] = useState(initialCategories);
   const [images, setImages] = useState(initialImages);
+  const [videos, setVideos] = useState(initialVideos);
+  // Napredak obrade klipa, po proizvodu.
+  const [videoProgress, setVideoProgress] = useState<Record<string, VideoProgress | null>>({});
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('sve');
   const [notice, setNotice] = useState<string | null>(null);
@@ -177,6 +206,19 @@ export default function AdminProizvodiClient({
     return map;
   }, [images]);
 
+  const videosByProduct = useMemo(() => {
+    const map = new Map<string, AdminVideoRow[]>();
+    for (const v of videos) {
+      const list = map.get(v.product_slug) ?? [];
+      list.push(v);
+      map.set(v.product_slug, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id);
+    }
+    return map;
+  }, [videos]);
+
   const [state, setState] = useState<Record<string, RowState>>(() =>
     Object.fromEntries(
       initialProducts.map((p) => {
@@ -194,6 +236,7 @@ export default function AdminProizvodiClient({
             howToUse: p.how_to_use ?? '',
             formulation: p.formulation ?? '',
             euCompliance: p.eu_compliance ?? '',
+            instagramUrl: p.instagram_url ?? '',
             prices,
             discount: p.discount_percent == null ? '' : String(Number(p.discount_percent)),
             saving: false,
@@ -292,6 +335,12 @@ export default function AdminProizvodiClient({
       return false;
     }
 
+    const instagramUrl = row.instagramUrl.trim();
+    if (instagramUrl !== '' && !/^https:\/\/([a-z0-9-]+\.)?instagram\.com\//i.test(instagramUrl)) {
+      patch(slug, { saving: false, error: 'Instagram link mora počinjati sa https://www.instagram.com/' });
+      return false;
+    }
+
     const features = row.features
       .split('\n')
       .map((line) => line.trim())
@@ -308,6 +357,7 @@ export default function AdminProizvodiClient({
         how_to_use: row.howToUse.trim(),
         formulation: row.formulation.trim(),
         eu_compliance: row.euCompliance.trim(),
+        instagram_url: instagramUrl,
       })
       .eq('slug', slug);
 
@@ -337,6 +387,7 @@ export default function AdminProizvodiClient({
               how_to_use: row.howToUse.trim(),
               formulation: row.formulation.trim(),
               eu_compliance: row.euCompliance.trim(),
+              instagram_url: instagramUrl,
             }
           : p,
       ),
@@ -705,6 +756,152 @@ export default function AdminProizvodiClient({
     }
     patch(slug, { uploading: false, saved: true });
     invalidatePricingCache();
+  };
+
+  // ── Video klipovi ───────────────────────────────────────────────
+
+  const nextVideoOrder = (slug: string) => {
+    const list = videosByProduct.get(slug) ?? [];
+    return list.reduce((max, v) => Math.max(max, v.sort_order ?? 0), 0) + 1;
+  };
+
+  const setProgress = (slug: string, value: VideoProgress | null) =>
+    setVideoProgress((prev) => ({ ...prev, [slug]: value }));
+
+  /**
+   * Obrada ide u browseru (ffmpeg.wasm) pa tek onda slanje — zato ide
+   * klip po klip i zato panel prikazuje napredak.
+   */
+  const addVideos = async (slug: string, files: File[]) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    patch(slug, { uploading: true, error: null, saved: false });
+
+    let order = nextVideoOrder(slug);
+    const added: AdminVideoRow[] = [];
+
+    for (const file of files) {
+      const { reason } = await checkVideo(file);
+      if (reason) {
+        patch(slug, { uploading: false, error: reason });
+        break;
+      }
+
+      setProgress(slug, { stage: 'jezgro', ratio: 0, fileName: file.name });
+
+      let result;
+      try {
+        result = await transcodeVideo(file, (stage, ratio) =>
+          setProgress(slug, { stage, ratio, fileName: file.name }),
+        );
+      } catch {
+        result = null;
+      }
+
+      if (!result) {
+        patch(slug, {
+          uploading: false,
+          error: `„${file.name}" nije moguće obraditi. Sačuvaj ga kao MP4 u telefonu pa pokušaj ponovo.`,
+        });
+        break;
+      }
+
+      if (result.video.size > MAX_OUTPUT_BYTES) {
+        patch(slug, {
+          uploading: false,
+          error: `Klip je i posle obrade ${formatBytes(result.video.size)} — skrati ga pa pokušaj ponovo.`,
+        });
+        break;
+      }
+
+      setProgress(slug, { stage: 'slanje', ratio: 0, fileName: file.name });
+      const uploaded = await uploadVideo(supabase, slug, result);
+      if (!uploaded) {
+        patch(slug, { uploading: false, error: 'Slanje klipa nije uspelo.' });
+        break;
+      }
+
+      const { data, error: insertError } = await supabase
+        .from('product_videos')
+        .insert({
+          product_slug: slug,
+          url: uploaded.url,
+          poster_url: uploaded.posterUrl,
+          duration_seconds: Number(result.duration.toFixed(2)),
+          size_bytes: result.video.size,
+          sort_order: order,
+        })
+        .select('id, product_slug, url, poster_url, duration_seconds, size_bytes, sort_order')
+        .single();
+
+      if (insertError || !data) {
+        // Fajl je u bucket-u, ali nije povezan — ne ostavljaj ga da visi.
+        await removeVideoFiles(supabase, uploaded.url, uploaded.posterUrl);
+        patch(slug, { uploading: false, error: 'Klip je poslat, ali nije povezan sa proizvodom.' });
+        break;
+      }
+
+      added.push(data as AdminVideoRow);
+      order += 1;
+    }
+
+    setProgress(slug, null);
+    if (added.length > 0) {
+      setVideos((prev) => [...prev, ...added]);
+      patch(slug, { uploading: false, saved: true });
+    } else {
+      patch(slug, { uploading: false });
+    }
+  };
+
+  const removeProductVideo = async (slug: string, id: number) => {
+    const target = videos.find((v) => v.id === id);
+    if (!target) return;
+    if (!window.confirm('Obriši ovaj klip?')) return;
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    patch(slug, { uploading: true, error: null });
+
+    const { error: deleteError } = await supabase.from('product_videos').delete().eq('id', id);
+    if (deleteError) {
+      patch(slug, { uploading: false, error: 'Brisanje klipa nije uspelo.' });
+      return;
+    }
+
+    await removeVideoFiles(supabase, target.url, target.poster_url);
+    setVideos((prev) => prev.filter((v) => v.id !== id));
+    patch(slug, { uploading: false, saved: true });
+  };
+
+  const moveProductVideo = async (slug: string, id: number, direction: -1 | 1) => {
+    const list = videosByProduct.get(slug) ?? [];
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + direction;
+    if (i === -1 || j < 0 || j >= list.length) return;
+
+    const reordered = [...list];
+    [reordered[i], reordered[j]] = [reordered[j], reordered[i]];
+    const withOrder = reordered.map((v, idx) => ({ ...v, sort_order: idx + 1 }));
+    setVideos((prev) => prev.map((v) => withOrder.find((x) => x.id === v.id) ?? v));
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    patch(slug, { uploading: true, error: null });
+    for (const v of withOrder) {
+      const { error: orderError } = await supabase
+        .from('product_videos')
+        .update({ sort_order: v.sort_order })
+        .eq('id', v.id);
+      if (orderError) {
+        patch(slug, { uploading: false, error: 'Redosled klipova nije sačuvan. Osveži stranicu.' });
+        return;
+      }
+    }
+    patch(slug, { uploading: false, saved: true });
   };
 
   const toggleFlag = async (slug: string, column: 'is_active' | 'is_featured', next: boolean) => {
@@ -1119,6 +1316,23 @@ export default function AdminProizvodiClient({
                               onMove={(id, dir) => void moveProductImage(p.slug, id, dir)}
                               onRemove={(id) => void removeProductImage(p.slug, id)}
                             />
+
+                            {videosMissing ? (
+                              <p className="mt-5 border-t border-line pt-5 font-body text-[12px] leading-relaxed text-muted">
+                                Za video klipove pokreni{' '}
+                                <span className="font-mono text-ink">supabase/setup.sql</span> u
+                                Supabase SQL Editoru pa osveži stranicu.
+                              </p>
+                            ) : (
+                              <ProductVideosField
+                                videos={videosByProduct.get(p.slug) ?? []}
+                                busy={s.uploading}
+                                progress={videoProgress[p.slug] ?? null}
+                                onAdd={(files) => void addVideos(p.slug, files)}
+                                onMove={(id, dir) => void moveProductVideo(p.slug, id, dir)}
+                                onRemove={(id) => void removeProductVideo(p.slug, id)}
+                              />
+                            )}
                           </div>
 
                           {/* Tekst i cene stoje sklopljeni dok se ne zatraže — spisak
@@ -1128,10 +1342,10 @@ export default function AdminProizvodiClient({
                             onClick={() => toggleEditor(p.slug)}
                             aria-expanded={editing}
                             aria-controls={`edit-${p.slug}`}
-                            className={`${BTN_QUIET} mt-4 w-full justify-between gap-3 sm:w-auto sm:justify-center`}
+                            className={`${BTN_EDIT} mt-5`}
                           >
                             <span>{editing ? 'Zatvori uređivanje' : 'Uredi proizvod'}</span>
-                            <span aria-hidden className={editing ? 'rotate-180' : ''}>
+                            <span aria-hidden className={`text-[16px] ${editing ? 'rotate-180' : ''}`}>
                               ▾
                             </span>
                           </button>
@@ -1187,6 +1401,13 @@ export default function AdminProizvodiClient({
                                   value={s.euCompliance}
                                   onChange={(v) => patchText(p.slug, { euCompliance: v })}
                                   rows={2}
+                                />
+                                <Field
+                                  id={`ig-${p.slug}`}
+                                  label="Instagram objava — nalepi link, prazno = bez ikonice"
+                                  value={s.instagramUrl}
+                                  onChange={(v) => patchText(p.slug, { instagramUrl: v })}
+                                  placeholder="https://www.instagram.com/p/..."
                                 />
                               </div>
 

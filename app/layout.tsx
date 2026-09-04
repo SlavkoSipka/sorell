@@ -3,9 +3,12 @@ import { Manrope, Playfair_Display } from 'next/font/google';
 import Navigation from '@/components/layout/Navigation';
 import Footer from '@/components/layout/Footer';
 import CartDrawerLazy from '@/components/cart/CartDrawerLazy';
+import GoogleAnalytics from '@/components/GoogleAnalytics';
 import { CartProvider } from '@/lib/cart-context';
 import { SITE } from '@/lib/site-config';
 import { getMetadataBaseUrl } from '@/lib/site-url';
+import { getHeaderTheme } from '@/lib/theme-server';
+import { headerThemeCss } from '@/lib/theme';
 import './globals.css';
 
 const playfair = Playfair_Display({
@@ -22,9 +25,11 @@ const manrope = Manrope({
   display: 'swap',
 });
 
-export const viewport: Viewport = {
-  themeColor: '#FFFFFF',
-};
+/** Boja adresne trake na mobilnom prati pozadinu navigacije. */
+export async function generateViewport(): Promise<Viewport> {
+  const theme = await getHeaderTheme();
+  return { themeColor: theme.navBg };
+}
 
 const googleVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION?.trim();
 
@@ -48,16 +53,21 @@ export const metadata: Metadata = {
   ...(googleVerification ? { verification: { google: googleVerification } } : {}),
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const headerTheme = await getHeaderTheme();
+
   return (
     <html lang="sr" className={`${playfair.variable} ${manrope.variable}`}>
       <body className="flex min-h-screen flex-col bg-canvas text-ink antialiased">
+        {/* Boje zaglavlja iz admina; vrednosti su provereno HEX (lib/theme.ts). */}
+        <style dangerouslySetInnerHTML={{ __html: headerThemeCss(headerTheme) }} />
         <CartProvider>
           <Navigation />
           <CartDrawerLazy />
           <div className="flex-1 pt-[100px]">{children}</div>
           <Footer />
         </CartProvider>
+        <GoogleAnalytics />
       </body>
     </html>
   );

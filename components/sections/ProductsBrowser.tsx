@@ -22,7 +22,7 @@ export default function ProductsBrowser({
   const sections = Children.toArray(children);
 
   const chip = (selected: boolean) =>
-    `inline-flex min-h-[44px] shrink-0 snap-start items-center whitespace-nowrap rounded-card border px-4 font-body text-[12px] uppercase tracking-[0.1em] transition-colors ${
+    `inline-flex min-h-[44px] shrink-0 snap-start items-center whitespace-nowrap rounded-card border px-4 font-body text-[13px] uppercase tracking-[0.1em] transition-colors ${
       selected
         ? 'border-ink bg-ink text-canvas'
         : 'border-line-strong text-ink-soft hover:border-ink hover:text-ink'
@@ -55,7 +55,7 @@ export default function ProductsBrowser({
               className={chip(active === g.slug)}
             >
               {g.label}
-              <span className="ml-2 font-body text-[11px] normal-case tracking-normal opacity-60">
+              <span className="ml-2 font-body text-[12px] normal-case tracking-normal opacity-60">
                 {g.count}
               </span>
             </button>

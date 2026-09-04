@@ -13,6 +13,8 @@ const STATIC_PATHS: Array<{
   { path: '/usluge', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/o-nama', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/kontakt', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/politika-privatnosti', changeFrequency: 'yearly', priority: 0.2 },
+  { path: '/uslovi-koriscenja', changeFrequency: 'yearly', priority: 0.2 },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

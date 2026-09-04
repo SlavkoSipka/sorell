@@ -17,14 +17,14 @@ export default function BundleCard({ bundle }: { bundle: BundleContent }) {
       </Link>
 
       <div className="mt-5 flex-1 md:mt-0">
-        <p className="font-body text-[10px] uppercase tracking-[0.16em] text-muted">Paket</p>
+        <p className="font-body text-[11px] uppercase tracking-[0.16em] text-muted">Paket</p>
         <h3 className="mt-1.5 font-display text-[22px] leading-tight text-ink">
           <Link href={`/paketi/${bundle.slug}`} className="hover:underline underline-offset-4">
             {bundle.name}
           </Link>
         </h3>
-        <p className="mt-1 font-body text-[13px] text-ink-soft">{componentNames}</p>
-        <p className="mt-3 max-w-[520px] font-body text-[13px] leading-relaxed text-ink-soft">
+        <p className="mt-1 font-body text-[14px] text-ink-soft">{componentNames}</p>
+        <p className="mt-3 max-w-[520px] font-body text-[14px] leading-relaxed text-ink-soft">
           {bundle.tagline}
         </p>
 
@@ -44,7 +44,7 @@ export default function BundleCard({ bundle }: { bundle: BundleContent }) {
           />
           <Link
             href={`/paketi/${bundle.slug}`}
-            className="rounded-card border border-line-strong px-6 py-3 font-body text-[11px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
+            className="rounded-card border border-line-strong px-6 py-3 font-body text-[12px] uppercase tracking-[0.14em] text-ink transition-colors hover:border-ink"
           >
             Detaljnije
           </Link>

@@ -12,7 +12,7 @@
   --color-line-strong: #D5D1CA;
   --color-ink: #171614;
   --color-ink-soft: #4B4843;
-  --color-muted: #8C8880;
+  --color-muted: #6E6A63;
   --color-accent: #B08E6A;
   --color-accent-soft: #F5EEE6;
   --color-danger: #9B2C2C;
@@ -21,6 +21,23 @@
   --font-body: 'Manrope', system-ui, sans-serif;
 
   --radius-card: 4px;
+}
+
+/*
+  Boje zaglavlja (traka + navigacija) — ovo su podrazumevane vrednosti.
+  Admin panel ih prepisuje preko <style> taga u app/layout.tsx (vidi lib/theme.ts).
+  Izvedene boje se same preračunaju, pa se menja samo pet vrednosti ispod.
+*/
+:root {
+  --ticker-bg: #FAF9F7;
+  --ticker-text: #4B4843;
+  --nav-bg: #FFFFFF;
+  --nav-text: #171614;
+  --nav-border: #E7E4DF;
+
+  --ticker-border: color-mix(in srgb, var(--ticker-text) 18%, var(--ticker-bg));
+  --nav-text-soft: color-mix(in srgb, var(--nav-text) 68%, var(--nav-bg));
+  --nav-overlay: color-mix(in srgb, var(--nav-text) 20%, transparent);
 }
 
 html {
@@ -35,7 +52,8 @@ html {
 
 body {
   font-family: var(--font-body);
-  font-weight: 400;
+  /* Manrope Medium umesto Regular — sitan tekst je na telefonu bio pretanak. */
+  font-weight: 500;
   color: var(--color-ink);
   background-color: var(--color-canvas);
   -webkit-font-smoothing: antialiased;
@@ -44,7 +62,7 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 

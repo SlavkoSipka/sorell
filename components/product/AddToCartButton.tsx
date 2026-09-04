@@ -48,7 +48,7 @@ export default function AddToCartButton({
           ? addBundle(slug)
           : addItem({ slug, productSlug: productSlug ?? slug, packageLabel, name, price, image })
       }
-      className={`rounded-card border px-6 py-3 font-body text-[11px] uppercase tracking-[0.14em] transition-colors duration-200 ${styles} ${
+      className={`rounded-card border px-6 py-3 font-body text-[12px] uppercase tracking-[0.14em] transition-colors duration-200 ${styles} ${
         fullWidth ? 'w-full' : ''
       } ${className}`}
     >
