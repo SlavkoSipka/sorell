@@ -4,36 +4,60 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { canvasToBlob, createHiddenVideo, destroyVideo, isMobileDevice, withTimeout } from './media';
+
 /**
- * Video klipovi proizvoda — obrada u browseru pre slanja.
+ * Video klipovi proizvoda — dva puta do sajta, po uređaju.
  *
- * Zašto ovako: Supabase free plan daje 1 GB prostora i 5 GB protoka
- * mesečno, a snimak sa telefona ume da bude 150 MB. Server ne može da
- * transkoduje (Vercel nema ffmpeg), pa se posao radi kod vlasnice —
- * ffmpeg.wasm prebaci klip u H.264 MP4, smanji stranicu na najviše
- * 1280 px, ograniči na 30 fps i izbaci zvuk. Od 150 MB tipično ostane
- * 1–3 MB. Traje duže nego obično slanje i to je namerno.
+ * Na računaru: ffmpeg.wasm prebaci klip u H.264 MP4, smanji stranicu na
+ * najviše 1280 px, ograniči na 30 fps i izbaci zvuk. Od 150 MB tipično
+ * ostane 1–3 MB. Traje duže nego obično slanje i to je namerno — Supabase
+ * free plan daje 1 GB prostora i 5 GB protoka mesečno.
+ *
+ * Na telefonu: klip ide **direktno**, bez ffmpeg-a. ffmpeg.wasm na
+ * iPhone-u traži par stotina megabajta WASM memorije koje Safari nema —
+ * kartica se ili sruši ili zauvek stoji na istom procentu. To je bio
+ * uzrok zamrzavanja u admin panelu. Direktno slanje je veće, ali radi na
+ * svakom telefonu i klip je na sajtu odmah. iPhone pri izboru iz galerije
+ * ionako sam prepakuje HEVC u H.264, pa je snimak upotrebljiv na sajtu.
  */
 
 /** Bucket odvojen od slika — svoj limit i jasna slika potrošnje. */
 export const VIDEO_BUCKET = 'product-videos';
 
-/** Šta biramo iz fajl-dijaloga. iPhone šalje `video/quicktime`. */
+/** Tipovi koje umemo da pošaljemo. iPhone šalje `video/quicktime`. */
 export const ACCEPTED_VIDEO_TYPES = [
   'video/mp4',
   'video/quicktime',
   'video/webm',
   'video/x-matroska',
   'video/3gpp',
+  'video/3gpp2',
   'video/x-m4v',
+  'video/mpeg',
+  'video/x-msvideo',
+  'video/avi',
+  'video/ogg',
 ];
 
-/** Gornja granica ulaznog fajla — preko ovoga ffmpeg.wasm ostaje bez memorije. */
-export const MAX_SOURCE_BYTES = 300 * 1024 * 1024;
+/**
+ * Šta ide u `accept` fajl-dijaloga. Namerno `video/*`: iPhone filtrira
+ * galeriju po ovoj listi i ume da zabrani izbor snimka čiji tip ne
+ * prepozna — vlasnica onda vidi pola albuma zasivljeno.
+ */
+export const VIDEO_INPUT_ACCEPT = 'video/*';
+
+/** Gornja granica ulaznog fajla — iznad ovoga slanje sa telefona nema smisla. */
+export const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
 /** Duži klipovi previše troše protok; panel ih odbija sa objašnjenjem. */
 export const MAX_DURATION_SECONDS = 60;
-/** Isti limit koji bucket nameće (migracija 0008) — proveravamo i ovde. */
-export const MAX_OUTPUT_BYTES = 25 * 1024 * 1024;
+/** Isti limit koji bucket nameće (migracija 0012) — proveravamo i ovde. */
+export const MAX_OUTPUT_BYTES = 200 * 1024 * 1024;
+
+/** Koliko čekamo `<video>` da pročita zaglavlje pre nego što odustanemo. */
+const META_TIMEOUT_MS = 20000;
+/** Koliko čekamo prvi kadar za sličicu. Sličica nije obavezna. */
+const POSTER_TIMEOUT_MS = 20000;
 
 /** Duža stranica gotovog klipa. 1280 je dovoljno za prikaz na sajtu. */
 const MAX_EDGE = 1280;
@@ -55,27 +79,38 @@ const CORE_BASE = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dis
 
 export type VideoMeta = { duration: number; width: number; height: number };
 
-/** Trajanje i dimenzije bez učitavanja ffmpeg-a — da se 30 MB jezgra ne skida uzalud. */
-export function readVideoMeta(file: File): Promise<VideoMeta | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    video.preload = 'metadata';
-    video.muted = true;
+/**
+ * Trajanje i dimenzije bez učitavanja ffmpeg-a.
+ *
+ * Element mora da bude u dokumentu, muted i `playsinline` — Safari na
+ * iPhone-u odvojenom `<video>` elementu ne javi ni `loadedmetadata` ni
+ * `error`, pa je ranije ovde obećanje ostajalo da visi zauvek. Zato i
+ * rok: ako za `META_TIMEOUT_MS` ništa ne stigne, vraćamo `null` i
+ * nastavljamo bez podataka umesto da se panel zamrzne.
+ */
+export function readVideoMeta(input: Blob): Promise<VideoMeta | null> {
+  return withTimeout(
+    new Promise<VideoMeta | null>((resolve) => {
+      const url = URL.createObjectURL(input);
+      const video = createHiddenVideo();
+      video.preload = 'metadata';
 
-    const done = (meta: VideoMeta | null) => {
-      URL.revokeObjectURL(url);
-      video.removeAttribute('src');
-      resolve(meta);
-    };
+      const done = (meta: VideoMeta | null) => {
+        URL.revokeObjectURL(url);
+        destroyVideo(video);
+        resolve(meta);
+      };
 
-    video.onloadedmetadata = () => {
-      const duration = Number.isFinite(video.duration) ? video.duration : 0;
-      done({ duration, width: video.videoWidth, height: video.videoHeight });
-    };
-    video.onerror = () => done(null);
-    video.src = url;
-  });
+      video.onloadedmetadata = () => {
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        done({ duration, width: video.videoWidth, height: video.videoHeight });
+      };
+      video.onerror = () => done(null);
+      video.src = url;
+      video.load();
+    }),
+    META_TIMEOUT_MS,
+  ).then((meta) => meta ?? null);
 }
 
 /**
@@ -88,8 +123,14 @@ export function readVideoMeta(file: File): Promise<VideoMeta | null> {
 export async function checkVideo(
   file: File,
 ): Promise<{ reason: string | null; meta: VideoMeta | null }> {
-  if (file.type && !ACCEPTED_VIDEO_TYPES.includes(file.type)) {
-    return { reason: 'Dozvoljeni su MP4, MOV, WEBM, MKV i 3GP klipovi.', meta: null };
+  // Tip namerno ne odbijamo: iPhone i Samsung umeju da pošalju prazan
+  // ili neočekivan `type` za sopstveni snimak. Ako browser ne ume da ga
+  // otvori, to se vidi niže — po imenu fajla koje nije video uopšte.
+  const looksLikeVideo =
+    (file.type ? file.type.startsWith('video/') : false) ||
+    /\.(mp4|m4v|mov|webm|mkv|3gp|3g2|avi|mpe?g|ogv)$/i.test(file.name);
+  if (!looksLikeVideo) {
+    return { reason: `„${file.name}" nije video fajl.`, meta: null };
   }
   if (file.size > MAX_SOURCE_BYTES) {
     return {
@@ -231,40 +272,185 @@ export async function transcodeVideo(
   }
 }
 
-/** Prvi upotrebljiv kadar kao WebP — galerija ga pokazuje pre puštanja. */
+/**
+ * Prvi upotrebljiv kadar kao sličica.
+ *
+ * Ovde se panel na telefonu ranije zamrzavao. Odvojen `<video>` element
+ * na iOS-u ne dekodira ništa dok nije u dokumentu, muted i `playsinline`,
+ * pa `loadeddata`/`seeked` nikad ne stignu — a stara verzija je čekala
+ * bez roka. Sada element ide u dokument, kratko se pusti da Safari
+ * napuni prvi kadar, i sve ima rok. Sličica nije obavezna: ako ne uspe,
+ * vraćamo `null` i klip svejedno ide na sajt.
+ */
 export function posterFrom(video: Blob): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(video);
-    const el = document.createElement('video');
-    el.muted = true;
-    el.playsInline = true;
-    el.preload = 'auto';
+  return withTimeout(
+    new Promise<Blob | null>((resolve) => {
+      const url = URL.createObjectURL(video);
+      const el = createHiddenVideo();
+      el.preload = 'auto';
+      let drawn = false;
 
-    const done = (blob: Blob | null) => {
-      URL.revokeObjectURL(url);
-      el.removeAttribute('src');
-      resolve(blob);
-    };
+      const done = (blob: Blob | null) => {
+        if (drawn) return;
+        drawn = true;
+        URL.revokeObjectURL(url);
+        destroyVideo(el);
+        resolve(blob);
+      };
 
-    el.onloadeddata = () => {
-      // Prvi kadar ume da bude crn; uzimamo malo kasnije.
-      el.currentTime = Math.min(0.3, (el.duration || 1) / 2);
-    };
+      const draw = async () => {
+        if (drawn) return;
+        const w = el.videoWidth;
+        const h = el.videoHeight;
+        if (!w || !h) return done(null);
+        const scale = Math.min(1, 800 / Math.max(w, h));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return done(null);
+        try {
+          ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+        } catch {
+          return done(null);
+        }
+        const webp = await canvasToBlob(canvas, 'image/webp', 0.8, 6000);
+        // Safari koji ne peče WebP vrati PNG — tada radije JPEG, manji je.
+        if (webp && webp.type === 'image/webp') return done(webp);
+        done((await canvasToBlob(canvas, 'image/jpeg', 0.82, 6000)) ?? webp);
+      };
 
-    el.onseeked = () => {
-      const scale = Math.min(1, 800 / Math.max(el.videoWidth, el.videoHeight, 1));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(el.videoWidth * scale));
-      canvas.height = Math.max(1, Math.round(el.videoHeight * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return done(null);
-      ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((b) => done(b), 'image/webp', 0.8);
-    };
+      el.onloadeddata = () => {
+        // Prvi kadar ume da bude crn; uzimamo malo kasnije.
+        const t = Math.min(0.3, (Number.isFinite(el.duration) ? el.duration : 1) / 2);
+        try {
+          el.currentTime = t;
+        } catch {
+          void draw();
+        }
+      };
+      el.onseeked = () => void draw();
+      // iOS ponekad ne odradi `seeked` na detaljnom fajlu, ali odradi
+      // `timeupdate` čim krene reprodukcija — zato i taj put.
+      el.ontimeupdate = () => {
+        if (el.currentTime > 0) void draw();
+      };
+      el.onerror = () => done(null);
 
-    el.onerror = () => done(null);
-    el.src = url;
-  });
+      el.src = url;
+      el.load();
+      // Muted + playsinline puštanje je na iOS-u dozvoljeno bez dodira i
+      // jedini pouzdan način da se prvi kadar zaista dekodira.
+      void el.play().catch(() => {});
+    }),
+    POSTER_TIMEOUT_MS,
+  ).then((blob) => blob ?? null);
+}
+
+/**
+ * Da li ovaj uređaj sme da pokrene ffmpeg.wasm.
+ *
+ * Telefoni ne smeju: jezgro traži ~32 MB skidanja i par stotina MB
+ * radne memorije, što Safari na iPhone-u ne daje — kartica se sruši ili
+ * napredak stane zauvek. Slabiji uređaji (manje od 4 GB) takođe ne.
+ */
+export function canTranscodeHere(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (isMobileDevice()) return false;
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  if (typeof memory === 'number' && memory < 4) return false;
+  return true;
+}
+
+export type PreparedVideo = TranscodeResult & {
+  /** MIME koji ide u bucket — direktan put zadržava original. */
+  contentType: string;
+  /** Nastavak fajla u bucket-u. */
+  ext: string;
+  /** Da li je klip prošao ffmpeg (manji fajl) ili je poslat kakav jeste. */
+  transcoded: boolean;
+};
+
+/**
+ * Nastavak i MIME za klip koji ide bez obrade.
+ *
+ * Oba se svode na spisak koji bucket propušta (migracija 0012). Telefon
+ * ume da prijavi tip koji nije na spisku — tada radije šaljemo pod
+ * `video/mp4` nego da nam Storage vrati grešku i klip ne stigne na sajt.
+ */
+function directTypes(file: File): { ext: string; contentType: string } {
+  const byExt: Record<string, string> = {
+    mp4: 'video/mp4',
+    m4v: 'video/x-m4v',
+    mov: 'video/quicktime',
+    qt: 'video/quicktime',
+    webm: 'video/webm',
+    mkv: 'video/x-matroska',
+    '3gp': 'video/3gpp',
+    '3g2': 'video/3gpp2',
+    avi: 'video/x-msvideo',
+    mpg: 'video/mpeg',
+    mpeg: 'video/mpeg',
+    ogv: 'video/ogg',
+  };
+
+  const rawExt = extensionOf(file);
+  const ext = rawExt in byExt ? rawExt : 'mp4';
+
+  const declared = file.type?.toLowerCase() ?? '';
+  const contentType = ACCEPTED_VIDEO_TYPES.includes(declared)
+    ? declared
+    : (byExt[ext] ?? 'video/mp4');
+
+  return { ext, contentType };
+}
+
+/** Klip ide kakav jeste — samo pročitamo podatke i uhvatimo sličicu. */
+async function prepareDirect(
+  file: File,
+  onProgress?: (stage: TranscodeStage, ratio: number) => void,
+): Promise<PreparedVideo | null> {
+  const meta = await readVideoMeta(file);
+  onProgress?.('poster', 0);
+  const poster = await posterFrom(file);
+  onProgress?.('poster', 1);
+
+  const { ext, contentType } = directTypes(file);
+  return {
+    video: file,
+    poster,
+    duration: meta?.duration ?? 0,
+    width: meta?.width ?? 0,
+    height: meta?.height ?? 0,
+    contentType,
+    ext,
+    transcoded: false,
+  };
+}
+
+/**
+ * Priprema klip za slanje i bira put sam.
+ *
+ * Računar ide kroz ffmpeg (mali fajl), telefon direktno (radi uvek).
+ * Ako ffmpeg iz bilo kog razloga zakaže, ne odustajemo — klip ide
+ * direktno, jer je bolje veći fajl na sajtu nego poruka o grešci.
+ */
+export async function prepareVideo(
+  file: File,
+  onProgress?: (stage: TranscodeStage, ratio: number) => void,
+): Promise<PreparedVideo | null> {
+  if (canTranscodeHere()) {
+    try {
+      const result = await transcodeVideo(file, onProgress);
+      if (result && result.video.size > 0) {
+        return { ...result, contentType: 'video/mp4', ext: 'mp4', transcoded: true };
+      }
+    } catch {
+      // Pada na direktan put ispod.
+    }
+  }
+  if (file.size > MAX_OUTPUT_BYTES) return null;
+  return prepareDirect(file, onProgress);
 }
 
 // ── Slanje u bucket ─────────────────────────────────────────────
@@ -282,33 +468,89 @@ export function videoPathFromPublicUrl(url: string): string | null {
 
 export type UploadedVideo = { url: string; posterUrl: string };
 
+/**
+ * Slanje u bucket preko XHR-a, da bi napredak bio stvaran.
+ *
+ * Supabase klijent ne javlja koliko je poslato, a snimak sa telefona ide
+ * i po nekoliko minuta preko mobilnog interneta — traka koja stoji na
+ * nuli izgleda isto kao zamrznut panel. XHR javlja bajtove, pa vlasnica
+ * vidi da se nešto dešava. Ako sesija nije pri ruci, pada na obično
+ * slanje preko klijenta.
+ */
+async function uploadToBucket(
+  supabase: SupabaseClient,
+  path: string,
+  body: Blob,
+  contentType: string,
+  onProgress?: (ratio: number) => void,
+): Promise<boolean> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const token = (await supabase.auth.getSession()).data.session?.access_token;
+
+  if (!base || !anon || !token) {
+    const { error } = await supabase.storage.from(VIDEO_BUCKET).upload(path, body, {
+      cacheControl: '31536000',
+      upsert: false,
+      contentType,
+    });
+    return !error;
+  }
+
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      'POST',
+      `${base.replace(/\/$/, '')}/storage/v1/object/${VIDEO_BUCKET}/${path
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`,
+    );
+    xhr.setRequestHeader('authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('apikey', anon);
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.setRequestHeader('cache-control', 'max-age=31536000');
+    xhr.setRequestHeader('content-type', contentType);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.min(1, e.loaded / e.total));
+    };
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+    xhr.onerror = () => resolve(false);
+    xhr.onabort = () => resolve(false);
+    xhr.send(body);
+  });
+}
+
 /** Šalje gotov klip i njegov poster; poster nije obavezan. */
 export async function uploadVideo(
   supabase: SupabaseClient,
   folder: string,
-  result: TranscodeResult,
+  result: PreparedVideo,
+  onProgress?: (ratio: number) => void,
 ): Promise<UploadedVideo | null> {
-  const videoPath = objectPath(folder, 'mp4');
-  const { error } = await supabase.storage.from(VIDEO_BUCKET).upload(videoPath, result.video, {
-    cacheControl: '31536000',
-    upsert: false,
-    contentType: 'video/mp4',
-  });
-  if (error) return null;
+  const videoPath = objectPath(folder, result.ext);
+  const ok = await uploadToBucket(
+    supabase,
+    videoPath,
+    result.video,
+    result.contentType,
+    onProgress,
+  );
+  if (!ok) return null;
 
   const url = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(videoPath).data.publicUrl;
 
   let posterUrl = '';
   if (result.poster) {
-    const posterPath = objectPath(folder, 'webp');
-    const { error: posterError } = await supabase.storage
-      .from(VIDEO_BUCKET)
-      .upload(posterPath, result.poster, {
-        cacheControl: '31536000',
-        upsert: false,
-        contentType: 'image/webp',
-      });
-    if (!posterError) {
+    const posterExt = result.poster.type === 'image/jpeg' ? 'jpg' : 'webp';
+    const posterPath = objectPath(folder, posterExt);
+    const posterOk = await uploadToBucket(
+      supabase,
+      posterPath,
+      result.poster,
+      result.poster.type || 'image/webp',
+    );
+    if (posterOk) {
       posterUrl = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(posterPath).data.publicUrl;
     }
   }

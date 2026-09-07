@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useSyncExternalStore } from 'react';
 import {
-  ACCEPTED_VIDEO_TYPES,
+  VIDEO_INPUT_ACCEPT,
   MAX_DURATION_SECONDS,
+  canTranscodeHere,
   formatBytes,
   formatDuration,
   type TranscodeStage,
@@ -48,6 +49,14 @@ export default function ProductVideosField({
   onRemove: (id: number) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  // Uputstvo mora da odgovara onome što se stvarno dešava: računar
+  // smanjuje klip, telefon ga šalje kakav jeste. Uređaj se ne zna dok
+  // se ne stigne u browser, pa server render uvek kreće od „bez obrade".
+  const compresses = useSyncExternalStore(
+    () => () => {},
+    () => canTranscodeHere(),
+    () => false,
+  );
 
   const totalBytes = videos.reduce((sum, v) => sum + Number(v.size_bytes ?? 0), 0);
 
@@ -57,9 +66,9 @@ export default function ProductVideosField({
         Video klipovi ({videos.length})
       </p>
       <p className="mb-2 mt-1 font-body text-[12px] leading-relaxed text-muted">
-        Okači snimak sa telefona kakav jeste — sam se smanjuje, prepakuje u MP4 i ostaje bez zvuka.
-        Od 100 MB obično ostane 1–2 MB. Najduže {MAX_DURATION_SECONDS} s po klipu. Obrada traje
-        koliko i sam snimak, ponekad i duže — ne zatvaraj stranicu dok radi.
+        {compresses
+          ? `Okači snimak kakav jeste — sam se smanjuje, prepakuje u MP4 i ostaje bez zvuka. Od 100 MB obično ostane 1–2 MB. Najduže ${MAX_DURATION_SECONDS} s po klipu. Obrada traje koliko i sam snimak, ponekad i duže — ne zatvaraj stranicu dok radi.`
+          : `Okači snimak sa telefona kakav jeste — ide pravo na sajt, bez obrade. Najduže ${MAX_DURATION_SECONDS} s po klipu. Preko mobilnog interneta veći snimak ide par minuta; traka ispod pokazuje dokle je stiglo.`}
       </p>
 
       {videos.length > 0 ? (
@@ -148,7 +157,7 @@ export default function ProductVideosField({
         ref={inputRef}
         type="file"
         multiple
-        accept={ACCEPTED_VIDEO_TYPES.join(',')}
+        accept={VIDEO_INPUT_ACCEPT}
         className="sr-only"
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);

@@ -2,6 +2,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { canvasToBlob, isIosLike, withTimeout } from './media';
+
 /** Bucket u koji admin panel diže sve slike (proizvodi i hero). */
 export const IMAGE_BUCKET = 'product-images';
 
@@ -17,10 +19,30 @@ export const ACCEPTED_IMAGE_TYPES = [
   'image/png',
   'image/webp',
   'image/avif',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
   // iPhone ume da pošalje HEIC; Safari ga dekodira, ostali javе grešku niže.
   'image/heic',
   'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence',
 ];
+
+/**
+ * Šta ide u `accept` fajl-dijaloga. Namerno `image/*`, a ne spisak:
+ * iPhone strogo filtrira galeriju po `accept` listi i ume da zabrani
+ * izbor slike čiji tip ne prepozna, pa vlasnica vidi pola albuma sivo.
+ */
+export const IMAGE_INPUT_ACCEPT = 'image/*';
+
+/** Koliko čekamo dekodiranje jedne slike pre nego što odustanemo. */
+const DECODE_TIMEOUT_MS = 25000;
+/**
+ * Gornja granica površine platna na iOS-u. Safari tiho vrati prazno
+ * (belo/crno) platno kad se pređe, umesto da javi grešku.
+ */
+const IOS_MAX_CANVAS_PIXELS = 16_000_000;
 
 /**
  * Odnos stranica koji sajt koristi za svaku sliku proizvoda i za hero.
@@ -52,8 +74,68 @@ export function storagePathFromPublicUrl(url: string): string | null {
   return i === -1 ? null : url.slice(i + marker.length);
 }
 
-function encode(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
-  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+type DecodedImage = {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  release: () => void;
+};
+
+/**
+ * Otvara sliku bilo kojim putem koji browser ume, redom:
+ *
+ * 1. `createImageBitmap` sa EXIF orijentacijom — brzo, ne blokira nit;
+ * 2. `createImageBitmap` bez opcija — stariji Safari puca na opcije;
+ * 3. `<img>` preko object URL-a — jedini put koji na iPhone-u otvori HEIC.
+ *
+ * Svaki korak ima rok. Bez roka Safari na velikoj fotografiji ume da
+ * ostavi obećanje da visi, a panel onda zauvek stoji na „Obrađujem…".
+ */
+async function decodeImage(file: File): Promise<DecodedImage | null> {
+  if (typeof createImageBitmap === 'function') {
+    const attempts: Array<() => Promise<ImageBitmap>> = [
+      () => createImageBitmap(file, { imageOrientation: 'from-image' }),
+      () => createImageBitmap(file),
+    ];
+    for (const attempt of attempts) {
+      let bitmap: ImageBitmap | null = null;
+      try {
+        bitmap = await withTimeout(attempt(), DECODE_TIMEOUT_MS);
+      } catch {
+        bitmap = null;
+      }
+      if (bitmap && bitmap.width > 0 && bitmap.height > 0) {
+        const bmp = bitmap;
+        return { source: bmp, width: bmp.width, height: bmp.height, release: () => bmp.close() };
+      }
+      if (bitmap) bitmap.close();
+    }
+  }
+
+  // Rezervni put: `<img>`. Browseri od 2021. naovamo sami primenjuju EXIF
+  // orijentaciju pri crtanju, pa slika sa telefona nije izvrnuta.
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.decoding = 'async';
+  const loaded = await withTimeout(
+    new Promise<boolean>((resolve, reject) => {
+      img.onload = () => resolve(true);
+      img.onerror = () => reject(new Error('nečitljiva slika'));
+      img.src = url;
+    }),
+    DECODE_TIMEOUT_MS,
+  );
+
+  if (!loaded || !img.naturalWidth || !img.naturalHeight) {
+    URL.revokeObjectURL(url);
+    return null;
+  }
+  return {
+    source: img,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+    release: () => URL.revokeObjectURL(url),
+  };
 }
 
 export type ProcessedImage = { blob: Blob; ext: string };
@@ -65,59 +147,82 @@ export type ProcessedImage = { blob: Blob; ext: string };
  * ne mora ništa da kadrira ni da smanjuje. Ako browser ne ume WebP (stariji
  * Safari), pada na JPEG — nikad ne vraća neobrađen original, jer bi tada
  * fotografija sa telefona probila limit bucket-a.
+ *
+ * Nijedan korak nema pravo da visi: dekodiranje i pakovanje imaju rok, a
+ * na iOS-u se preveliki original prvo smanji u međukoraku, jer Safari
+ * preko ~16 Mpx tiho nacrta prazno platno umesto slike.
  */
 export async function processImage(
   file: File,
   ratio: number = TARGET_RATIO,
   maxHeight: number = TARGET_HEIGHT,
 ): Promise<ProcessedImage | null> {
-  let bitmap: ImageBitmap;
+  const decoded = await decodeImage(file);
+  if (!decoded) return null;
+
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    // Najčešće HEIC u browseru koji ga ne dekodira.
+    const srcRatio = decoded.width / decoded.height;
+
+    // Isečak je najveći pravougaonik traženog odnosa koji staje u original.
+    let cropW: number;
+    let cropH: number;
+    if (srcRatio > ratio) {
+      cropH = decoded.height;
+      cropW = cropH * ratio;
+    } else {
+      cropW = decoded.width;
+      cropH = cropW / ratio;
+    }
+    let sx = (decoded.width - cropW) / 2;
+    let sy = (decoded.height - cropH) / 2;
+    let source = decoded.source;
+
+    // iPhone: fotografija od 48 Mpx probija Safarijev limit platna, pa
+    // je prvo smanjimo u jedan međukorak koji sigurno staje.
+    if (isIosLike() && decoded.width * decoded.height > IOS_MAX_CANVAS_PIXELS) {
+      const scale = Math.sqrt(IOS_MAX_CANVAS_PIXELS / (decoded.width * decoded.height));
+      const midW = Math.max(1, Math.round(decoded.width * scale));
+      const midH = Math.max(1, Math.round(decoded.height * scale));
+      const mid = document.createElement('canvas');
+      mid.width = midW;
+      mid.height = midH;
+      const midCtx = mid.getContext('2d');
+      if (midCtx) {
+        midCtx.imageSmoothingQuality = 'high';
+        midCtx.drawImage(decoded.source, 0, 0, midW, midH);
+        source = mid;
+        cropW *= scale;
+        cropH *= scale;
+        sx *= scale;
+        sy *= scale;
+      }
+    }
+
+    // Ne uvećavaj preko originala — samo smanjuj kad je slika veća od potrebnog.
+    const outH = Math.max(1, Math.round(Math.min(maxHeight, cropH)));
+    const outW = Math.max(1, Math.round(outH * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, sx, sy, cropW, cropH, 0, 0, outW, outH);
+
+    const webp = await canvasToBlob(canvas, 'image/webp', WEBP_QUALITY);
+    // Browser koji ne ume WebP vrati PNG pod drugim tipom — tada radije JPEG.
+    if (webp && webp.type === 'image/webp') return { blob: webp, ext: 'webp' };
+
+    const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.85);
+    if (jpeg) return { blob: jpeg, ext: 'jpg' };
+
+    // Poslednja šansa: PNG je veći, ali bolje veliki nego nijedan.
+    if (webp) return { blob: webp, ext: webp.type === 'image/png' ? 'png' : 'jpg' };
     return null;
+  } finally {
+    decoded.release();
   }
-
-  const srcRatio = bitmap.width / bitmap.height;
-
-  // Isečak je najveći pravougaonik traženog odnosa koji staje u original.
-  let cropW: number;
-  let cropH: number;
-  if (srcRatio > ratio) {
-    cropH = bitmap.height;
-    cropW = cropH * ratio;
-  } else {
-    cropW = bitmap.width;
-    cropH = cropW / ratio;
-  }
-  const sx = (bitmap.width - cropW) / 2;
-  const sy = (bitmap.height - cropH) / 2;
-
-  // Ne uvećavaj preko originala — samo smanjuj kad je slika veća od potrebnog.
-  const outH = Math.max(1, Math.round(Math.min(maxHeight, cropH)));
-  const outW = Math.max(1, Math.round(outH * ratio));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = outW;
-  canvas.height = outH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    bitmap.close();
-    return null;
-  }
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bitmap, sx, sy, cropW, cropH, 0, 0, outW, outH);
-  bitmap.close();
-
-  let blob = await encode(canvas, 'image/webp', WEBP_QUALITY);
-  // Browser koji ne ume WebP vrati PNG pod drugim tipom — tada radije JPEG.
-  if (!blob || blob.type !== 'image/webp') {
-    blob = await encode(canvas, 'image/jpeg', 0.85);
-    if (!blob) return null;
-    return { blob, ext: 'jpg' };
-  }
-  return { blob, ext: 'webp' };
 }
 
 /**

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
-  ACCEPTED_IMAGE_TYPES,
+  IMAGE_INPUT_ACCEPT,
   SALON_HEIGHT,
   SALON_RATIO,
   processImage,
@@ -376,7 +376,7 @@ export default function AdminSalonSection({
           <input
             ref={fileRef}
             type="file"
-            accept={ACCEPTED_IMAGE_TYPES.join(',')}
+            accept={IMAGE_INPUT_ACCEPT}
             className="sr-only"
             onChange={(e) => {
               const file = e.target.files?.[0];

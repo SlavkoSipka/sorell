@@ -16,7 +16,7 @@ import {
   checkVideo,
   formatBytes,
   removeVideoFiles,
-  transcodeVideo,
+  prepareVideo,
   uploadVideo,
 } from '@/lib/admin/videos';
 
@@ -790,9 +790,11 @@ export default function AdminProizvodiClient({
 
       setProgress(slug, { stage: 'jezgro', ratio: 0, fileName: file.name });
 
+      // Na telefonu ide direktno, na računaru kroz ffmpeg — `prepareVideo`
+      // bira sam i nikad ne ostaje da visi.
       let result;
       try {
-        result = await transcodeVideo(file, (stage, ratio) =>
+        result = await prepareVideo(file, (stage, ratio) =>
           setProgress(slug, { stage, ratio, fileName: file.name }),
         );
       } catch {
@@ -802,7 +804,7 @@ export default function AdminProizvodiClient({
       if (!result) {
         patch(slug, {
           uploading: false,
-          error: `„${file.name}" nije moguće obraditi. Sačuvaj ga kao MP4 u telefonu pa pokušaj ponovo.`,
+          error: `„${file.name}" je ${formatBytes(file.size)} — najviše može ${formatBytes(MAX_OUTPUT_BYTES)}. Skrati klip u telefonu pa pokušaj ponovo.`,
         });
         break;
       }
@@ -810,13 +812,15 @@ export default function AdminProizvodiClient({
       if (result.video.size > MAX_OUTPUT_BYTES) {
         patch(slug, {
           uploading: false,
-          error: `Klip je i posle obrade ${formatBytes(result.video.size)} — skrati ga pa pokušaj ponovo.`,
+          error: `Klip je ${formatBytes(result.video.size)} — skrati ga pa pokušaj ponovo.`,
         });
         break;
       }
 
       setProgress(slug, { stage: 'slanje', ratio: 0, fileName: file.name });
-      const uploaded = await uploadVideo(supabase, slug, result);
+      const uploaded = await uploadVideo(supabase, slug, result, (ratio) =>
+        setProgress(slug, { stage: 'slanje', ratio, fileName: file.name }),
+      );
       if (!uploaded) {
         patch(slug, { uploading: false, error: 'Slanje klipa nije uspelo.' });
         break;

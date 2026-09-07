@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
-import { ACCEPTED_IMAGE_TYPES } from '@/lib/admin/images';
+import { IMAGE_INPUT_ACCEPT } from '@/lib/admin/images';
 
 export type AdminImageRow = {
   id: number;
@@ -105,7 +105,7 @@ export default function ProductImagesField({
         ref={inputRef}
         type="file"
         multiple
-        accept={ACCEPTED_IMAGE_TYPES.join(',')}
+        accept={IMAGE_INPUT_ACCEPT}
         className="sr-only"
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);

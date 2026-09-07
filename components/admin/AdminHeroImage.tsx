@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { invalidatePricingCache } from '@/lib/use-pricing-data';
 import {
-  ACCEPTED_IMAGE_TYPES,
+  IMAGE_INPUT_ACCEPT,
   processImage,
   rejectReason,
   removeImage,
@@ -146,7 +146,7 @@ export default function AdminHeroImage({
           <input
             ref={inputRef}
             type="file"
-            accept={ACCEPTED_IMAGE_TYPES.join(',')}
+            accept={IMAGE_INPUT_ACCEPT}
             className="sr-only"
             onChange={(e) => {
               const file = e.target.files?.[0];
