@@ -7,9 +7,9 @@
 -- proizvod pripada. Admin panel dodaje, preimenuje i briše kategorije i
 -- prevlači proizvode između njih.
 --
--- Bezbedno je pokrenuti više puta: postojeće kategorije se osvežavaju po
--- nazivu i redosledu, a RASPORED proizvoda se postavlja samo onima koji
--- još nemaju kategoriju — tako izmene iz admina ostaju netaknute.
+-- Bezbedno je pokrenuti više puta: početne kategorije, raspored proizvoda i
+-- predložene cene upisuju se samo u bazu koja još nema nijednu kategoriju.
+-- Posle toga sve vodi admin, pa se obrisano ne vraća i izmene ostaju.
 -- ═══════════════════════════════════════════════════════════════════
 
 BEGIN;
@@ -32,6 +32,12 @@ COMMENT ON TABLE public.categories IS
   'Linije proizvoda. Uređuju se iz admin panela (/admin/proizvodi).';
 
 CREATE INDEX IF NOT EXISTS idx_categories_sort ON public.categories (sort_order, id);
+
+-- Da li je baza nova (bez ijedne kategorije). Seed ispod radi samo tada, da
+-- ponovno pokretanje ne vrati obrisanu kategoriju, ne preimenuje je i ne upiše
+-- cenu u pakovanje koje je admin namerno ostavio prazno.
+CREATE TEMP TABLE _seed_0004 ON COMMIT DROP AS
+  SELECT NOT EXISTS (SELECT 1 FROM public.categories) AS fresh;
 
 -- ── 2. products.category_slug ────────────────────────────────────
 
@@ -65,7 +71,7 @@ CREATE POLICY "Admins manage categories"
 -- ── 4. Početne kategorije — iste kao dosadašnje linije iz koda ───
 
 INSERT INTO public.categories (slug, name, sort_order)
-VALUES
+SELECT * FROM (VALUES
   ('builder-gel-pro-fiber-line',    'Builder Gel – Pro Fiber Line',    1),
   ('builder-gel-fluid-perfect',     'Builder Gel – Fluid Perfect',     2),
   ('rubber-base-camouflage',        'Rubber Base – Camouflage',        3),
@@ -73,37 +79,37 @@ VALUES
   ('super-shine-top-coat',          'Super Shine Top Coat',            5),
   ('effect-top-coat-milky',         'Effect Top Coat – Milky',         6),
   ('effect-top-coat-shimmer-vibe',  'Effect Top Coat – Shimmer Vibe',  7)
-ON CONFLICT (slug) DO UPDATE SET
-  name       = EXCLUDED.name,
-  sort_order = EXCLUDED.sort_order;
+) AS c (slug, name, sort_order)
+WHERE (SELECT fresh FROM _seed_0004)
+ON CONFLICT (slug) DO NOTHING;
 
--- ── 5. Raspored proizvoda — samo za one bez kategorije ───────────
--- `category_slug IS NULL` čuva svako premeštanje urađeno iz admina.
+-- ── 5. Raspored proizvoda, samo u novoj bazi ─────────────────────
+-- Posle toga proizvod bez kategorije je izbor iz admina i ostaje takav.
 
 UPDATE public.products SET category_slug = 'builder-gel-pro-fiber-line'
-  WHERE category_slug IS NULL AND slug LIKE 'pro-fiber-%';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug LIKE 'pro-fiber-%';
 
 UPDATE public.products SET category_slug = 'builder-gel-fluid-perfect'
-  WHERE category_slug IS NULL AND slug LIKE 'fluid-perfect-%';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug LIKE 'fluid-perfect-%';
 
 UPDATE public.products SET category_slug = 'rubber-base-camouflage'
-  WHERE category_slug IS NULL AND slug LIKE 'rubber-base-%';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug LIKE 'rubber-base-%';
 
 UPDATE public.products SET category_slug = 'pro-base-clear'
-  WHERE category_slug IS NULL AND slug = 'pro-base-clear';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'pro-base-clear';
 
 UPDATE public.products SET category_slug = 'super-shine-top-coat'
-  WHERE category_slug IS NULL AND slug = 'super-shine-top-coat';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'super-shine-top-coat';
 
 UPDATE public.products SET category_slug = 'effect-top-coat-milky'
-  WHERE category_slug IS NULL AND slug = 'effect-top-coat-milky';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'effect-top-coat-milky';
 
 UPDATE public.products SET category_slug = 'effect-top-coat-shimmer-vibe'
-  WHERE category_slug IS NULL AND slug = 'effect-top-coat-shimmer-vibe';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'effect-top-coat-shimmer-vibe';
 
--- ── 6. Cenovnik gelova — samo pakovanja bez unete cene ───────────
--- Predložene maloprodajne cene, RSD sa PDV-om. Cene unete iz admina
--- (price_rsd NOT NULL) se NE diraju.
+-- ── 6. Predložene cene gelova, samo u novoj bazi ─────────────────
+-- Maloprodajne cene, RSD sa PDV-om. Posle prvog pokretanja cene vodi admin;
+-- pakovanje bez cene se na sajtu ne prikazuje, pa se ne sme ponovo popuniti.
 
 UPDATE public.product_variants v SET price_rsd = c.price
 FROM (VALUES
@@ -125,7 +131,8 @@ FROM (VALUES
   ('effect-top-coat-shimmer-vibe', '15 ml', 1690)
 ) AS c (category_slug, package_label, price)
 JOIN public.products p ON p.category_slug = c.category_slug
-WHERE v.product_slug = p.slug
+WHERE (SELECT fresh FROM _seed_0004)
+  AND v.product_slug = p.slug
   AND v.package_label = c.package_label
   AND v.price_rsd IS NULL;
 

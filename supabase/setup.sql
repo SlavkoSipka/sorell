@@ -21,6 +21,10 @@
 --   0010_salon_cenovnik.sql
 --   0011_hero_link_i_adresa.sql
 --   0012_video_sa_telefona.sql
+--   0013_hero_slajdovi.sql
+--   0014_baner_pocetne.sql
+--   0015_popust_po_pakovanju.sql
+--   0016_proizvodi_iz_admina.sql
 -- ═══════════════════════════════════════════════════════════════════
 
 -- ───────────────────────────────────────────────────────────────────
@@ -455,8 +459,9 @@ CREATE POLICY "Admins delete product images"
 -- SORELLE katalog — 46 proizvoda i 117 varijanti pakovanja.
 -- Generisano iz tabele „SORELLE_proizvodi_za_sajt_NOVA_TABELA" (list „Proizvodi za sajt").
 --
--- Bezbedno je pokrenuti više puta: naziv, pakovanje i redosled se osvežavaju,
--- a CENE, POPUSTI, SLIKE i „na sajtu" se NE diraju — to su podaci iz admin panela.
+-- Katalog se upisuje samo u praznu bazu (dok nema nijednog pakovanja). Posle
+-- toga proizvode i pakovanja vodi admin panel: pravi nove, menja nazive i
+-- briše, pa ponovno pokretanje ne sme ništa da vrati ni da obriše.
 
 BEGIN;
 
@@ -465,7 +470,7 @@ DELETE FROM public.products
 WHERE slug IN ('hidratantna-krema', 'nocna-krema', 'serum-za-lice', 'micelarna-voda');
 
 INSERT INTO public.products (slug, name, base_price_rsd, image_path, volume, sort_order, is_active)
-VALUES
+SELECT * FROM (VALUES
   ('pro-fiber-naked-skin', 'Pro Fiber Builder Gel — Naked Skin', 0, '', '10 g / 30 g / 50 g', 1, true),
   ('pro-fiber-silky-blush', 'Pro Fiber Builder Gel — Silky Blush', 0, '', '10 g / 30 g / 50 g', 2, true),
   ('pro-fiber-natural-harmony', 'Pro Fiber Builder Gel — Natural Harmony', 0, '', '10 g / 30 g / 50 g', 3, true),
@@ -512,13 +517,15 @@ VALUES
   ('super-shine-top-coat', 'Super Shine Top Coat', 0, '', '10 ml / 15 ml', 44, true),
   ('effect-top-coat-milky', 'Effect Top Coat Milky', 0, '', '10 ml / 15 ml', 45, true),
   ('effect-top-coat-shimmer-vibe', 'Effect Top Coat Shimmer Vibe', 0, '', '10 ml / 15 ml', 46, true)
+) AS v (slug, name, base_price_rsd, image_path, volume, sort_order, is_active)
+WHERE NOT EXISTS (SELECT 1 FROM public.product_variants)
 ON CONFLICT (slug) DO UPDATE SET
   name       = EXCLUDED.name,
   volume     = EXCLUDED.volume,
   sort_order = EXCLUDED.sort_order;
 
 INSERT INTO public.product_variants (product_slug, variant_slug, package_label, sort_order)
-VALUES
+SELECT * FROM (VALUES
   ('pro-fiber-naked-skin', 'pro-fiber-naked-skin--10g', '10 g', 1),
   ('pro-fiber-naked-skin', 'pro-fiber-naked-skin--30g', '30 g', 2),
   ('pro-fiber-naked-skin', 'pro-fiber-naked-skin--50g', '50 g', 3),
@@ -636,14 +643,18 @@ VALUES
   ('effect-top-coat-milky', 'effect-top-coat-milky--15ml', '15 ml', 2),
   ('effect-top-coat-shimmer-vibe', 'effect-top-coat-shimmer-vibe--10ml', '10 ml', 1),
   ('effect-top-coat-shimmer-vibe', 'effect-top-coat-shimmer-vibe--15ml', '15 ml', 2)
+) AS v (product_slug, variant_slug, package_label, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM public.product_variants)
 ON CONFLICT (variant_slug) DO UPDATE SET
   product_slug  = EXCLUDED.product_slug,
   package_label = EXCLUDED.package_label,
   sort_order    = EXCLUDED.sort_order;
 
--- Varijante koje su nekad postojale a više nisu u tabeli.
+-- Varijante koje su nekad postojale a više nisu u tabeli. Samo dok nijedna
+-- cena nije uneta: posle toga pakovanja vodi admin i ovde se ništa ne briše.
 DELETE FROM public.product_variants v
-WHERE v.variant_slug NOT IN (
+WHERE NOT EXISTS (SELECT 1 FROM public.product_variants x WHERE x.price_rsd IS NOT NULL)
+  AND v.variant_slug NOT IN (
   'pro-fiber-naked-skin--10g',
   'pro-fiber-naked-skin--30g',
   'pro-fiber-naked-skin--50g',
@@ -778,9 +789,9 @@ COMMIT;
 -- proizvod pripada. Admin panel dodaje, preimenuje i briše kategorije i
 -- prevlači proizvode između njih.
 --
--- Bezbedno je pokrenuti više puta: postojeće kategorije se osvežavaju po
--- nazivu i redosledu, a RASPORED proizvoda se postavlja samo onima koji
--- još nemaju kategoriju — tako izmene iz admina ostaju netaknute.
+-- Bezbedno je pokrenuti više puta: početne kategorije, raspored proizvoda i
+-- predložene cene upisuju se samo u bazu koja još nema nijednu kategoriju.
+-- Posle toga sve vodi admin, pa se obrisano ne vraća i izmene ostaju.
 -- ═══════════════════════════════════════════════════════════════════
 
 BEGIN;
@@ -803,6 +814,12 @@ COMMENT ON TABLE public.categories IS
   'Linije proizvoda. Uređuju se iz admin panela (/admin/proizvodi).';
 
 CREATE INDEX IF NOT EXISTS idx_categories_sort ON public.categories (sort_order, id);
+
+-- Da li je baza nova (bez ijedne kategorije). Seed ispod radi samo tada, da
+-- ponovno pokretanje ne vrati obrisanu kategoriju, ne preimenuje je i ne upiše
+-- cenu u pakovanje koje je admin namerno ostavio prazno.
+CREATE TEMP TABLE _seed_0004 ON COMMIT DROP AS
+  SELECT NOT EXISTS (SELECT 1 FROM public.categories) AS fresh;
 
 -- ── 2. products.category_slug ────────────────────────────────────
 
@@ -836,7 +853,7 @@ CREATE POLICY "Admins manage categories"
 -- ── 4. Početne kategorije — iste kao dosadašnje linije iz koda ───
 
 INSERT INTO public.categories (slug, name, sort_order)
-VALUES
+SELECT * FROM (VALUES
   ('builder-gel-pro-fiber-line',    'Builder Gel – Pro Fiber Line',    1),
   ('builder-gel-fluid-perfect',     'Builder Gel – Fluid Perfect',     2),
   ('rubber-base-camouflage',        'Rubber Base – Camouflage',        3),
@@ -844,37 +861,37 @@ VALUES
   ('super-shine-top-coat',          'Super Shine Top Coat',            5),
   ('effect-top-coat-milky',         'Effect Top Coat – Milky',         6),
   ('effect-top-coat-shimmer-vibe',  'Effect Top Coat – Shimmer Vibe',  7)
-ON CONFLICT (slug) DO UPDATE SET
-  name       = EXCLUDED.name,
-  sort_order = EXCLUDED.sort_order;
+) AS c (slug, name, sort_order)
+WHERE (SELECT fresh FROM _seed_0004)
+ON CONFLICT (slug) DO NOTHING;
 
--- ── 5. Raspored proizvoda — samo za one bez kategorije ───────────
--- `category_slug IS NULL` čuva svako premeštanje urađeno iz admina.
+-- ── 5. Raspored proizvoda, samo u novoj bazi ─────────────────────
+-- Posle toga proizvod bez kategorije je izbor iz admina i ostaje takav.
 
 UPDATE public.products SET category_slug = 'builder-gel-pro-fiber-line'
-  WHERE category_slug IS NULL AND slug LIKE 'pro-fiber-%';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug LIKE 'pro-fiber-%';
 
 UPDATE public.products SET category_slug = 'builder-gel-fluid-perfect'
-  WHERE category_slug IS NULL AND slug LIKE 'fluid-perfect-%';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug LIKE 'fluid-perfect-%';
 
 UPDATE public.products SET category_slug = 'rubber-base-camouflage'
-  WHERE category_slug IS NULL AND slug LIKE 'rubber-base-%';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug LIKE 'rubber-base-%';
 
 UPDATE public.products SET category_slug = 'pro-base-clear'
-  WHERE category_slug IS NULL AND slug = 'pro-base-clear';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'pro-base-clear';
 
 UPDATE public.products SET category_slug = 'super-shine-top-coat'
-  WHERE category_slug IS NULL AND slug = 'super-shine-top-coat';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'super-shine-top-coat';
 
 UPDATE public.products SET category_slug = 'effect-top-coat-milky'
-  WHERE category_slug IS NULL AND slug = 'effect-top-coat-milky';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'effect-top-coat-milky';
 
 UPDATE public.products SET category_slug = 'effect-top-coat-shimmer-vibe'
-  WHERE category_slug IS NULL AND slug = 'effect-top-coat-shimmer-vibe';
+  WHERE (SELECT fresh FROM _seed_0004) AND category_slug IS NULL AND slug = 'effect-top-coat-shimmer-vibe';
 
--- ── 6. Cenovnik gelova — samo pakovanja bez unete cene ───────────
--- Predložene maloprodajne cene, RSD sa PDV-om. Cene unete iz admina
--- (price_rsd NOT NULL) se NE diraju.
+-- ── 6. Predložene cene gelova, samo u novoj bazi ─────────────────
+-- Maloprodajne cene, RSD sa PDV-om. Posle prvog pokretanja cene vodi admin;
+-- pakovanje bez cene se na sajtu ne prikazuje, pa se ne sme ponovo popuniti.
 
 UPDATE public.product_variants v SET price_rsd = c.price
 FROM (VALUES
@@ -896,7 +913,8 @@ FROM (VALUES
   ('effect-top-coat-shimmer-vibe', '15 ml', 1690)
 ) AS c (category_slug, package_label, price)
 JOIN public.products p ON p.category_slug = c.category_slug
-WHERE v.product_slug = p.slug
+WHERE (SELECT fresh FROM _seed_0004)
+  AND v.product_slug = p.slug
   AND v.package_label = c.package_label
   AND v.price_rsd IS NULL;
 
@@ -1587,5 +1605,192 @@ ON CONFLICT (id) DO UPDATE SET
   public             = EXCLUDED.public,
   file_size_limit    = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0013_hero_slajdovi.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Više slajdova u zaglavlju početne strane
+--
+-- Zašto: hero je imao samo jednu sliku (`site_settings.hero_image_path`).
+-- Klijentkinja želi da ga koristi kao „novosti" — nekoliko fotografija
+-- koje se smenjuju, i svaka vodi na svoju liniju, gel ili boju.
+--
+-- Postojeća hero slika (sa linkom) postaje prvi slajd, a stare kolone se
+-- prazne da ponovno pokretanje ne bi vratilo obrisan slajd. Kolone ostaju
+-- u šemi: sajt ih čita samo dok ova tabela ne postoji.
+--
+-- `link_url` ide pravo u `href`, zato CHECK dozvoljava samo internu
+-- putanju (`/nesto`) ili http(s) adresu — nikad `javascript:`.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.hero_slides (
+  id SERIAL PRIMARY KEY,
+  -- Javni URL iz bucket-a `product-images` (folder `_hero/`).
+  image_url TEXT NOT NULL CHECK (length(btrim(image_url)) > 0),
+  -- Gde vodi klik. Prazno = slajd nije link.
+  link_url TEXT NOT NULL DEFAULT ''
+    CHECK (link_url = '' OR link_url ~ '^(/|https?://)[^\s]*$'),
+  -- Opis slike za čitače ekrana.
+  alt TEXT NOT NULL DEFAULT '',
+  -- Najmanji broj ide prvi.
+  sort_order INT NOT NULL DEFAULT 0,
+  -- false = slajd je sačuvan, ali se ne prikazuje na sajtu.
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.hero_slides IS
+  'Slajdovi u zaglavlju početne strane, redom po sort_order. Svaki može da vodi na proizvod, liniju ili stranicu.';
+
+CREATE INDEX IF NOT EXISTS idx_hero_slides_order
+  ON public.hero_slides (sort_order, id);
+
+ALTER TABLE public.hero_slides ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read hero_slides" ON public.hero_slides;
+CREATE POLICY "Public read hero_slides"
+  ON public.hero_slides FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "Admins manage hero_slides" ON public.hero_slides;
+CREATE POLICY "Admins manage hero_slides"
+  ON public.hero_slides FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+-- ── Postojeća hero slika postaje prvi slajd ──────────────────────
+
+INSERT INTO public.hero_slides (image_url, link_url, sort_order)
+SELECT s.hero_image_path, COALESCE(s.hero_link_url, ''), 1
+FROM public.site_settings s
+WHERE s.id = 1
+  AND btrim(s.hero_image_path) <> ''
+  AND NOT EXISTS (SELECT 1 FROM public.hero_slides);
+
+UPDATE public.site_settings s
+SET hero_image_path = '', hero_link_url = ''
+WHERE s.id = 1
+  AND btrim(s.hero_image_path) <> ''
+  AND EXISTS (SELECT 1 FROM public.hero_slides h WHERE h.image_url = s.hero_image_path);
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0014_baner_pocetne.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Baner na početnoj umesto spiska proizvoda
+--
+-- Zašto: ispod slajdova je stajao spisak „Izdvojeno iz ponude". Umesto
+-- njega sada ide jedna široka fotografija sa malim naslovom, opisom i
+-- dugmetom, i sve to se menja iz admina (Početna strana → Baner).
+--
+-- Podrazumevane vrednosti popune postojeći red jednom, pri dodavanju
+-- kolone; ponovno pokretanje ih ne vraća preko onoga što je uneto.
+--
+-- `banner_button_url` ide pravo u `href`, zato CHECK dozvoljava samo
+-- internu putanju (`/nesto`) ili http(s) adresu.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+ALTER TABLE public.site_settings
+  ADD COLUMN IF NOT EXISTS banner_is_active    BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS banner_image_path   TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS banner_title        TEXT NOT NULL DEFAULT 'Izdvojeno iz ponude',
+  ADD COLUMN IF NOT EXISTS banner_text         TEXT NOT NULL
+    DEFAULT 'Gradivni gelovi, rubber base i završni sjajevi. HEMA Free, Di-HEMA Free i TPO Free.',
+  ADD COLUMN IF NOT EXISTS banner_button_label TEXT NOT NULL DEFAULT 'Proizvodi',
+  ADD COLUMN IF NOT EXISTS banner_button_url   TEXT NOT NULL DEFAULT '/proizvodi';
+
+ALTER TABLE public.site_settings
+  DROP CONSTRAINT IF EXISTS site_settings_banner_button_url_check;
+
+ALTER TABLE public.site_settings
+  ADD CONSTRAINT site_settings_banner_button_url_check
+  CHECK (
+    banner_button_url = ''
+    OR banner_button_url ~ '^(/|https?://)[^\s]*$'
+  );
+
+COMMENT ON COLUMN public.site_settings.banner_is_active IS
+  'false = baner se ne prikazuje na početnoj.';
+COMMENT ON COLUMN public.site_settings.banner_image_path IS
+  'Široka fotografija (16:9) ispod slajdova. Prazno = okvir sa preporučenom dimenzijom.';
+COMMENT ON COLUMN public.site_settings.banner_button_url IS
+  'Gde vode dugme i fotografija. Prazno = baner nema dugme.';
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0015_popust_po_pakovanju.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Popust po pakovanju (gramaži)
+--
+-- Zašto: popust je do sada mogao da se zada samo za ceo proizvod. Sada
+-- može i za jedno pakovanje, npr. samo 30 g na −20%, dok 10 g i 50 g
+-- ostaju po ceni proizvoda.
+--
+-- Redosled: popust na pakovanju → popust na proizvodu → globalni popust.
+-- NULL = pakovanje nema svoj popust. 0 = to pakovanje namerno bez popusta.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+ALTER TABLE public.product_variants
+  ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5, 2) NULL
+    CHECK (discount_percent IS NULL OR (discount_percent >= 0 AND discount_percent <= 100));
+
+COMMENT ON COLUMN public.product_variants.discount_percent IS
+  'Popust samo za ovo pakovanje u %. NULL = važi popust proizvoda, pa globalni. /api/orders ga računa isto kao sajt.';
+
+COMMIT;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 0016_proizvodi_iz_admina.sql
+-- ───────────────────────────────────────────────────────────────────
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Novi proizvodi i pakovanja iz admin panela
+--
+-- Zašto: spisak proizvoda je do sada dolazio iz kataloga u kodu, pa je u
+-- novu kategoriju moglo da se prebaci samo nešto što već postoji. Sada sajt
+-- čita proizvode i pakovanja iz baze, a admin pravi nove, dodaje i briše
+-- gramaže i briše proizvode. Pravljenje i izmena su već bili dozvoljeni;
+-- nedostajala je dozvola za brisanje.
+--
+-- Brisanje proizvoda briše i njegova pakovanja, slike i klipove (kaskadno).
+-- Stare porudžbine ostaju, jer čuvaju naziv i cenu u `line_items`.
+--
+-- Bezbedno je pokrenuti više puta.
+-- ═══════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+DROP POLICY IF EXISTS "Admins delete products" ON public.products;
+CREATE POLICY "Admins delete products"
+  ON public.products FOR DELETE
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admins a WHERE a.user_id = auth.uid()));
+
+COMMENT ON COLUMN public.product_variants.package_label IS
+  'Kako pakovanje piše na sajtu: „10 g", „30 g". Prazno = proizvod bez gramaže, sa jednom cenom.';
 
 COMMIT;

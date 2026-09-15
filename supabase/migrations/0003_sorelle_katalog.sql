@@ -1,8 +1,9 @@
 -- SORELLE katalog — 46 proizvoda i 117 varijanti pakovanja.
 -- Generisano iz tabele „SORELLE_proizvodi_za_sajt_NOVA_TABELA" (list „Proizvodi za sajt").
 --
--- Bezbedno je pokrenuti više puta: naziv, pakovanje i redosled se osvežavaju,
--- a CENE, POPUSTI, SLIKE i „na sajtu" se NE diraju — to su podaci iz admin panela.
+-- Katalog se upisuje samo u praznu bazu (dok nema nijednog pakovanja). Posle
+-- toga proizvode i pakovanja vodi admin panel: pravi nove, menja nazive i
+-- briše, pa ponovno pokretanje ne sme ništa da vrati ni da obriše.
 
 BEGIN;
 
@@ -11,7 +12,7 @@ DELETE FROM public.products
 WHERE slug IN ('hidratantna-krema', 'nocna-krema', 'serum-za-lice', 'micelarna-voda');
 
 INSERT INTO public.products (slug, name, base_price_rsd, image_path, volume, sort_order, is_active)
-VALUES
+SELECT * FROM (VALUES
   ('pro-fiber-naked-skin', 'Pro Fiber Builder Gel — Naked Skin', 0, '', '10 g / 30 g / 50 g', 1, true),
   ('pro-fiber-silky-blush', 'Pro Fiber Builder Gel — Silky Blush', 0, '', '10 g / 30 g / 50 g', 2, true),
   ('pro-fiber-natural-harmony', 'Pro Fiber Builder Gel — Natural Harmony', 0, '', '10 g / 30 g / 50 g', 3, true),
@@ -58,13 +59,15 @@ VALUES
   ('super-shine-top-coat', 'Super Shine Top Coat', 0, '', '10 ml / 15 ml', 44, true),
   ('effect-top-coat-milky', 'Effect Top Coat Milky', 0, '', '10 ml / 15 ml', 45, true),
   ('effect-top-coat-shimmer-vibe', 'Effect Top Coat Shimmer Vibe', 0, '', '10 ml / 15 ml', 46, true)
+) AS v (slug, name, base_price_rsd, image_path, volume, sort_order, is_active)
+WHERE NOT EXISTS (SELECT 1 FROM public.product_variants)
 ON CONFLICT (slug) DO UPDATE SET
   name       = EXCLUDED.name,
   volume     = EXCLUDED.volume,
   sort_order = EXCLUDED.sort_order;
 
 INSERT INTO public.product_variants (product_slug, variant_slug, package_label, sort_order)
-VALUES
+SELECT * FROM (VALUES
   ('pro-fiber-naked-skin', 'pro-fiber-naked-skin--10g', '10 g', 1),
   ('pro-fiber-naked-skin', 'pro-fiber-naked-skin--30g', '30 g', 2),
   ('pro-fiber-naked-skin', 'pro-fiber-naked-skin--50g', '50 g', 3),
@@ -182,14 +185,18 @@ VALUES
   ('effect-top-coat-milky', 'effect-top-coat-milky--15ml', '15 ml', 2),
   ('effect-top-coat-shimmer-vibe', 'effect-top-coat-shimmer-vibe--10ml', '10 ml', 1),
   ('effect-top-coat-shimmer-vibe', 'effect-top-coat-shimmer-vibe--15ml', '15 ml', 2)
+) AS v (product_slug, variant_slug, package_label, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM public.product_variants)
 ON CONFLICT (variant_slug) DO UPDATE SET
   product_slug  = EXCLUDED.product_slug,
   package_label = EXCLUDED.package_label,
   sort_order    = EXCLUDED.sort_order;
 
--- Varijante koje su nekad postojale a više nisu u tabeli.
+-- Varijante koje su nekad postojale a više nisu u tabeli. Samo dok nijedna
+-- cena nije uneta: posle toga pakovanja vodi admin i ovde se ništa ne briše.
 DELETE FROM public.product_variants v
-WHERE v.variant_slug NOT IN (
+WHERE NOT EXISTS (SELECT 1 FROM public.product_variants x WHERE x.price_rsd IS NOT NULL)
+  AND v.variant_slug NOT IN (
   'pro-fiber-naked-skin--10g',
   'pro-fiber-naked-skin--30g',
   'pro-fiber-naked-skin--50g',

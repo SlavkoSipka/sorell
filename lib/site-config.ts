@@ -28,7 +28,7 @@ export const SITE: SiteConfig = {
   tagline: 'Profesionalna nega noktiju',
   description:
     'Sorelle — profesionalni gradivni gelovi, rubber base i završni sjajevi. HEMA Free, Di-HEMA Free i TPO Free, usklađeno sa važećim propisima EU za kozmetičke proizvode.',
-  /** Logo: ostavi prazno za tekstualni logo, ili npr. '/logo.svg'. */
+  /** Ne koristi se: logo je vektorski, u components/layout/SorelleLogo.tsx. */
   logoSrc: '',
   salon: {
     name: 'Kozmetički salon',

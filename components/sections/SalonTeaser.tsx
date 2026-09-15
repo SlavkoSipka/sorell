@@ -6,7 +6,7 @@ import { getSalonData } from '@/lib/salon-server';
 
 /**
  * Sekcija salona na početnoj. Fotografija, naslov, tekst i telefon dolaze
- * iz istog mesta kao stranica „Usluge" (Podešavanja → Salon u adminu).
+ * iz istog mesta kao stranica „Usluge" (kartica Salon u adminu).
  */
 export default async function SalonTeaser() {
   const salon = await getSalonData();

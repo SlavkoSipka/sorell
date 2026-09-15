@@ -68,6 +68,8 @@ export type DbVariant = {
   package_label: string;
   /** NULL = cena još nije uneta u adminu. */
   price_rsd: number | null;
+  /** Popust samo za ovo pakovanje u %. NULL = važi popust proizvoda ili globalni. */
+  discount_percent?: number | string | null;
   sort_order?: number;
   is_active?: boolean;
 };

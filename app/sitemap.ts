@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
-import { bundles, products } from '@/lib/data/products';
+import { bundles } from '@/lib/data/products';
+import { getProductOverrides } from '@/lib/products-server';
 import { getSiteUrl } from '@/lib/site-url';
 
 /** Javne stranice (bez korpe, porudžbine, zahvalnice, prijave i panela). */
@@ -17,9 +18,11 @@ const STATIC_PATHS: Array<{
   { path: '/uslovi-koriscenja', changeFrequency: 'yearly', priority: 0.2 },
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getSiteUrl();
   const now = new Date();
+  // Proizvodi iz baze, zajedno sa onima napravljenim u adminu; skriveni ne ulaze.
+  const { catalog, inactiveSlugs } = await getProductOverrides();
 
   return [
     ...STATIC_PATHS.map(({ path, changeFrequency, priority }) => ({
@@ -28,12 +31,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency,
       priority,
     })),
-    ...products.map((p) => ({
-      url: `${base}/proizvodi/${p.slug}`,
-      lastModified: now,
-      changeFrequency: 'weekly' as const,
-      priority: 0.9,
-    })),
+    ...catalog
+      .filter((p) => !inactiveSlugs.has(p.slug))
+      .map((p) => ({
+        url: `${base}/proizvodi/${p.slug}`,
+        lastModified: now,
+        changeFrequency: 'weekly' as const,
+        priority: 0.9,
+      })),
     ...bundles.map((b) => ({
       url: `${base}/paketi/${b.slug}`,
       lastModified: now,

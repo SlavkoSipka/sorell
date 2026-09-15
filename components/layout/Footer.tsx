@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SorelleLogo } from '@/components/layout/SorelleLogo';
 import { SITE } from '@/lib/site-config';
 import { FREE_SHIPPING_THRESHOLD_LABEL } from '@/lib/shipping';
 import { telHref } from '@/lib/order-status';
@@ -32,7 +33,7 @@ export default async function Footer() {
     <footer className="mt-auto border-t border-line bg-surface">
       <div className="mx-auto grid max-w-[1200px] gap-10 px-5 py-14 md:grid-cols-4 md:px-8">
         <div className="md:col-span-2">
-          <p className="font-display text-[22px] text-ink">{SITE.brandName}</p>
+          <SorelleLogo className="h-[112px] w-auto text-ink" title={SITE.brandName} />
           <p className="mt-3 max-w-[380px] font-body text-[14px] leading-relaxed text-ink-soft">
             {SITE.description}
           </p>

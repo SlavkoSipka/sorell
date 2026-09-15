@@ -55,8 +55,13 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   // ── Proizvodi, pakovanja i podešavanja iz baze (izvor istine za cene) ──
-  const [{ data: dbProductRows }, { data: dbVariantRows }, { data: settingsRow }] =
-    await Promise.all([
+  const [
+    { data: dbProductRows },
+    { data: dbVariantRows },
+    { data: settingsRow },
+    { data: variantDiscountRows },
+    { data: shadeRows },
+  ] = await Promise.all([
       admin
         .from('products')
         .select('slug, name, base_price_rsd, image_path, volume, discount_percent, is_active'),
@@ -68,6 +73,11 @@ export async function POST(request: Request) {
         .select('site_discount_percent, bundle_discount_percent')
         .eq('id', 1)
         .maybeSingle(),
+      // Odvojen upit: bez migracije 0015 padne, a porudžbine i dalje rade
+      // (isto kao na sajtu, pa se iznosi slažu).
+      admin.from('product_variants').select('variant_slug, discount_percent'),
+      // Nijanse za naziv stavke; bez migracije 0006 upit padne i naziv ide po starom.
+      admin.from('products').select('slug, shade'),
     ]);
 
   if (!dbProductRows || dbProductRows.length === 0) {
@@ -84,14 +94,27 @@ export async function POST(request: Request) {
 
   // Pakovanja isključenih proizvoda ispadaju zajedno sa proizvodom.
   const activeSlugs = new Set(dbProducts.map((p) => p.slug));
-  const dbVariants = ((dbVariantRows ?? []) as DbVariant[]).filter(
-    (v) => v.is_active !== false && activeSlugs.has(v.product_slug),
+  const discountByVariant = new Map(
+    (
+      (variantDiscountRows ?? []) as {
+        variant_slug: string;
+        discount_percent: number | string | null;
+      }[]
+    ).map((r) => [r.variant_slug, r.discount_percent]),
   );
+  const dbVariants = ((dbVariantRows ?? []) as DbVariant[])
+    .filter((v) => v.is_active !== false && activeSlugs.has(v.product_slug))
+    .map((v) => ({ ...v, discount_percent: discountByVariant.get(v.variant_slug) ?? null }));
   if (dbVariants.length === 0) {
     return NextResponse.json({ error: 'Trenutno nema dostupnih pakovanja.' }, { status: 503 });
   }
 
-  const variantLookup = buildVariantLookup(dbProducts as DbProduct[], dbVariants);
+  const shadeBySlug = shadeRows
+    ? new Map(
+        (shadeRows as { slug: string; shade: string | null }[]).map((r) => [r.slug, r.shade ?? '']),
+      )
+    : undefined;
+  const variantLookup = buildVariantLookup(dbProducts as DbProduct[], dbVariants, shadeBySlug);
 
   const settings = settingsRow as {
     site_discount_percent?: number | string;

@@ -1,7 +1,7 @@
 /**
  * Boje zaglavlja — traka sa obaveštenjima i navigacija.
  * Vrednosti se čuvaju u `site_settings` i menjaju iz admin panela
- * (Podešavanja → Boje zaglavlja). Podrazumevane su iste kao u globals.css.
+ * (kartica Boje zaglavlja). Podrazumevane su iste kao u globals.css.
  */
 
 export type HeaderTheme = {

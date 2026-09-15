@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 export default async function UslugePage() {
-  // Cenovnik, fotografija, naslov i telefon dolaze iz admina (Podešavanja → Salon).
+  // Cenovnik, fotografija, naslov i telefon dolaze iz admina (kartica Salon).
   const salon = await getSalonData();
 
   return (

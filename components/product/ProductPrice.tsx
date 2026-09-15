@@ -5,7 +5,6 @@ import {
   formatRsd,
   PRICE_PENDING_LABEL,
 } from '@/lib/price';
-import { getProductBySlug, variantKey } from '@/lib/data/products';
 import { effectiveDiscountPercent, usePricingData } from '@/lib/use-pricing-data';
 
 const SIZES = {
@@ -76,8 +75,9 @@ export default function ProductPrice({
 }
 
 /**
- * Najniža cena proizvoda — „od 1.890,00 RSD" na karticama, jer se pakovanje
- * bira tek na stranici proizvoda.
+ * Najniža cena proizvoda, „od 1.890,00 RSD" na karticama, jer se pakovanje
+ * bira tek na stranici proizvoda. Svako pakovanje može imati svoj popust, pa
+ * se uzima pakovanje sa najnižom cenom POSLE popusta.
  */
 export function ProductFromPrice({
   slug,
@@ -86,16 +86,31 @@ export function ProductFromPrice({
   slug: string;
   size?: PriceSize;
 }) {
-  const { fromPriceMap, productDiscountMap, siteDiscountPercent, loaded } = usePricingData();
+  const { priceMap, productDiscountMap, siteDiscountPercent, variantKeysByProduct, loaded } =
+    usePricingData();
 
-  const product = getProductBySlug(slug);
-  const base = loaded ? (fromPriceMap.get(slug) ?? 0) : 0;
-  const firstKey = product ? variantKey(slug, product.variants[0]?.code ?? '') : slug;
-  const percent = loaded
-    ? effectiveDiscountPercent(firstKey, productDiscountMap, siteDiscountPercent)
-    : 0;
+  // Pakovanja se čitaju iz baze, pa rade i za proizvode napravljene u adminu.
+  const keys = variantKeysByProduct.get(slug) ?? [];
+  let base = 0;
+  let percent = 0;
+  let lowest = Infinity;
+  let priced = 0;
+  if (loaded) {
+    for (const key of keys) {
+      const price = priceMap.get(key);
+      if (!price) continue;
+      priced += 1;
+      const pct = effectiveDiscountPercent(key, productDiscountMap, siteDiscountPercent);
+      const final = discountedUnitPriceRsd(price, pct);
+      if (final < lowest) {
+        lowest = final;
+        base = price;
+        percent = pct;
+      }
+    }
+  }
 
-  const showPrefix = base > 0 && (product?.variants.length ?? 0) > 1;
+  const showPrefix = base > 0 && priced > 1;
 
   return <PriceBody base={base} percent={percent} size={size} prefix={showPrefix ? 'od' : undefined} />;
 }

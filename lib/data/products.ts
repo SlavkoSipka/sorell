@@ -44,10 +44,10 @@ export function variantKey(productSlug: string, variantCode: string): string {
   return `${productSlug}--${variantCode}`;
 }
 
-/** Puni naziv za korpu i porudžbinu: „Naziv — Nijansa (30 g)". */
+/** Puni naziv za korpu i porudžbinu: „Naziv — Nijansa (30 g)"; bez zagrade kad nema gramaže. */
 export function variantDisplayName(product: Product, variant: ProductVariant): string {
   const base = product.shade ? `${product.name} — ${product.shade}` : product.name;
-  return `${base} (${variant.label})`;
+  return variant.label ? `${base} (${variant.label})` : base;
 }
 
 export const products: Product[] = [

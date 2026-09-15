@@ -15,7 +15,6 @@ type Props = {
     ukupno: number;
     bezCene: number;
     bezSlike: number;
-    naPocetnoj: number;
     iskljuceno: number;
   };
 };
@@ -55,19 +54,8 @@ export default function AdminOverviewClient({
           <CatalogRow label="Proizvoda" value={katalog.ukupno} />
           <CatalogRow label="Čeka cenu" value={katalog.bezCene} warn />
           <CatalogRow label="Čeka sliku" value={katalog.bezSlike} warn />
-          <CatalogRow label="Na početnoj" value={katalog.naPocetnoj} />
+          <CatalogRow label="Skinuto sa sajta" value={katalog.iskljuceno} />
         </ul>
-        {katalog.naPocetnoj === 0 ? (
-          <p className="mt-4 font-body text-[14px] leading-relaxed text-muted">
-            Nijedan proizvod nije izdvojen za početnu stranu — tamo se za sada prikazuje početak
-            kataloga. Označi {'„Na početnoj"'} kod proizvoda koje želiš da izdvojiš.
-          </p>
-        ) : null}
-        {katalog.iskljuceno > 0 ? (
-          <p className="mt-2 font-body text-[14px] text-muted">
-            {katalog.iskljuceno} proizvod(a) je skinuto sa sajta.
-          </p>
-        ) : null}
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">

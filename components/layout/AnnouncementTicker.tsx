@@ -2,7 +2,7 @@ import { SITE } from '@/lib/site-config';
 
 /**
  * Traka sa porukama na vrhu. Poruke se menjaju u lib/site-config.ts,
- * a boje iz admin panela (Podešavanja → Boje zaglavlja).
+ * a boje iz admin panela (kartica Boje zaglavlja).
  */
 export default function AnnouncementTicker() {
   const messages = SITE.announcements;

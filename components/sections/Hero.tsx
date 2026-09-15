@@ -1,11 +1,14 @@
 import Link from 'next/link';
 import Media from '@/components/ui/Media';
+import HeroSlider from '@/components/sections/HeroSlider';
 import { getProductOverrides } from '@/lib/products-server';
 import { SITE } from '@/lib/site-config';
 
 export default async function Hero() {
-  // Slika i link se kače iz admina (Podešavanja → Hero slika).
-  const { heroImage, heroLink } = await getProductOverrides();
+  // Slajdovi se kače iz admina (Početna strana → Slajdovi na vrhu).
+  const { heroImage, heroLink, heroSlides } = await getProductOverrides();
+  // Dok migracija 0013 nije puštena, ostaje stara jedna slika.
+  const slides = heroSlides ?? (heroImage ? [{ image: heroImage, link: heroLink, alt: '' }] : []);
 
   return (
     <section className="border-b border-line">
@@ -42,32 +45,13 @@ export default async function Hero() {
 
         {/* Na telefonu slika ide iznad teksta; na kompu ostaje desno. */}
         <div className="order-first md:order-none" data-reveal="true" data-reveal-delay="120">
-          {heroLink ? (
-            <Link
-              href={heroLink}
-              className="block transition-opacity hover:opacity-90"
-              aria-label="Otvori istaknutu ponudu"
-              {...(heroLink.startsWith('/')
-                ? {}
-                : { target: '_blank', rel: 'noopener noreferrer' })}
-            >
-              <Media
-                src={heroImage}
-                alt="Glavna fotografija"
-                ratio="4 / 5"
-                label="Hero slika · preporuka 1200×1500"
-                priority
-                sizes="(max-width: 768px) 100vw, 50vw"
-              />
-            </Link>
+          {slides.length > 0 ? (
+            <HeroSlider slides={slides} />
           ) : (
             <Media
-              src={heroImage}
               alt="Glavna fotografija"
               ratio="4 / 5"
               label="Hero slika · preporuka 1200×1500"
-              priority
-              sizes="(max-width: 768px) 100vw, 50vw"
             />
           )}
         </div>

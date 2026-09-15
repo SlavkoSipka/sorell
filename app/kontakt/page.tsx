@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function KontaktPage() {
-  // Telefon se menja iz admina (Podešavanja → Salon), isto kao na „Uslugama".
+  // Telefon se menja iz admina (kartica Salon), isto kao na „Uslugama".
   const { phone, address, city, title } = await getSalonData();
 
   return (

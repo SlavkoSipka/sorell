@@ -6,6 +6,8 @@ import { invalidatePricingCache } from '@/lib/use-pricing-data';
 import { discountedUnitPriceRsd, formatRsd } from '@/lib/price';
 import { placeholderImage } from '@/lib/data/product-images';
 import { processImage, rejectReason, removeImage, uploadProcessed } from '@/lib/admin/images';
+import { parsePct, parsePrice, slugify, uniqueSlug } from '@/lib/admin/parse';
+import NewProductForm from '@/components/admin/NewProductForm';
 import ProductImagesField, { type AdminImageRow } from '@/components/admin/ProductImagesField';
 import ProductVideosField, {
   type AdminVideoRow,
@@ -20,8 +22,6 @@ import {
   uploadVideo,
 } from '@/lib/admin/videos';
 
-/** Koliko proizvoda stane u „Izdvojeno iz ponude" na početnoj. */
-const FEATURED_SLOTS = 8;
 /** Ključ grupe za proizvode koji ne pripadaju nijednoj kategoriji. */
 const UNASSIGNED = '__bez-kategorije__';
 
@@ -58,6 +58,8 @@ export type AdminVariantRow = {
   variant_slug: string;
   package_label: string;
   price_rsd: number | string | null;
+  /** Popust samo za ovo pakovanje. NULL = važi popust proizvoda ili globalni. */
+  discount_percent?: number | string | null;
   sort_order: number | null;
   is_active: boolean;
 };
@@ -80,6 +82,10 @@ type TextFields = {
 type RowState = TextFields & {
   /** Cena po ključu varijante; prazan string = cena nije uneta. */
   prices: Record<string, string>;
+  /** Popust po ključu varijante; prazan string = važi popust proizvoda. */
+  variantDiscounts: Record<string, string>;
+  /** Naziv pakovanja po ključu varijante („30 g"); prazno = jedna cena bez gramaže. */
+  labels: Record<string, string>;
   discount: string;
   saving: boolean;
   saved: boolean;
@@ -87,39 +93,46 @@ type RowState = TextFields & {
   uploading: boolean;
 };
 
-type Filter = 'sve' | 'bez-cene' | 'bez-slike' | 'na-pocetnoj';
+type Filter = 'sve' | 'bez-cene' | 'bez-slike';
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'sve', label: 'Svi' },
   { id: 'bez-cene', label: 'Bez cene' },
   { id: 'bez-slike', label: 'Bez slike' },
-  { id: 'na-pocetnoj', label: 'Na početnoj' },
 ];
 
-function parsePct(raw: string): number | null {
-  const v = parseFloat(raw.replace(',', '.'));
-  if (Number.isNaN(v) || v < 0 || v > 100) return null;
-  return Math.round(v * 1e8) / 1e8;
-}
+/** Grupa „novi proizvod" iznad spiska, kad se ne pravi unutar kategorije. */
+const CREATE_TOP = '__novi-proizvod__';
 
-function parsePrice(raw: string): number | null {
-  const v = parseFloat(raw.replace(/\s/g, '').replace(',', '.'));
-  if (Number.isNaN(v) || v < 0) return null;
-  return Math.round(v * 100) / 100;
-}
-
-/** Naziv kategorije → slug za URL: „Builder Gel – Pro Fiber" → „builder-gel-pro-fiber". */
-function slugify(name: string): string {
-  const map: Record<string, string> = { č: 'c', ć: 'c', đ: 'dj', š: 's', ž: 'z' };
-  return name
-    .toLowerCase()
-    .split('')
-    .map((ch) => map[ch] ?? ch)
-    .join('')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+/** Stanje forme jednog proizvoda, iz redova baze. */
+function buildRowState(p: AdminProductRow, rowVariants: AdminVariantRow[]): RowState {
+  const prices: Record<string, string> = {};
+  const variantDiscounts: Record<string, string> = {};
+  const labels: Record<string, string> = {};
+  for (const v of rowVariants) {
+    prices[v.variant_slug] = v.price_rsd == null ? '' : String(Number(v.price_rsd));
+    variantDiscounts[v.variant_slug] =
+      v.discount_percent == null ? '' : String(Number(v.discount_percent));
+    labels[v.variant_slug] = v.package_label ?? '';
+  }
+  return {
+    name: p.name ?? '',
+    shade: p.shade ?? '',
+    volume: p.volume ?? '',
+    features: (p.features ?? []).join('\n'),
+    howToUse: p.how_to_use ?? '',
+    formulation: p.formulation ?? '',
+    euCompliance: p.eu_compliance ?? '',
+    instagramUrl: p.instagram_url ?? '',
+    prices,
+    variantDiscounts,
+    labels,
+    discount: p.discount_percent == null ? '' : String(Number(p.discount_percent)),
+    saving: false,
+    saved: false,
+    error: null,
+    uploading: false,
+  };
 }
 
 // Zajednički stilovi — dovoljno veliki za prst na telefonu (44 px visine),
@@ -148,6 +161,7 @@ export default function AdminProizvodiClient({
   imagesMissing,
   videosMissing,
   siteDiscountPercent,
+  variantDiscountsMissing = false,
 }: {
   initialProducts: AdminProductRow[];
   initialVariants: AdminVariantRow[];
@@ -159,6 +173,8 @@ export default function AdminProizvodiClient({
   /** Migracija 0008 nije pokrenuta — sekcija za klipove se tada ne prikazuje. */
   videosMissing: boolean;
   siteDiscountPercent: number;
+  /** Migracija 0015 nije pokrenuta: popust po pakovanju se ne može upisati. */
+  variantDiscountsMissing?: boolean;
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [variants, setVariants] = useState(initialVariants);
@@ -179,6 +195,10 @@ export default function AdminProizvodiClient({
   const [renaming, setRenaming] = useState<{ slug: string; name: string } | null>(null);
   const [catBusy, setCatBusy] = useState(false);
   const [catError, setCatError] = useState<string | null>(null);
+  // Gde je otvorena forma „Novi proizvod": slug kategorije ili CREATE_TOP.
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
+  // Naziv novog pakovanja koji se upisuje, po proizvodu.
+  const [newPackage, setNewPackage] = useState<Record<string, string>>({});
 
   const variantsByProduct = useMemo(() => {
     const map = new Map<string, AdminVariantRow[]>();
@@ -221,31 +241,13 @@ export default function AdminProizvodiClient({
 
   const [state, setState] = useState<Record<string, RowState>>(() =>
     Object.fromEntries(
-      initialProducts.map((p) => {
-        const prices: Record<string, string> = {};
-        for (const v of initialVariants.filter((x) => x.product_slug === p.slug)) {
-          prices[v.variant_slug] = v.price_rsd == null ? '' : String(Number(v.price_rsd));
-        }
-        return [
-          p.slug,
-          {
-            name: p.name ?? '',
-            shade: p.shade ?? '',
-            volume: p.volume ?? '',
-            features: (p.features ?? []).join('\n'),
-            howToUse: p.how_to_use ?? '',
-            formulation: p.formulation ?? '',
-            euCompliance: p.eu_compliance ?? '',
-            instagramUrl: p.instagram_url ?? '',
-            prices,
-            discount: p.discount_percent == null ? '' : String(Number(p.discount_percent)),
-            saving: false,
-            saved: false,
-            error: null,
-            uploading: false,
-          },
-        ];
-      }),
+      initialProducts.map((p) => [
+        p.slug,
+        buildRowState(
+          p,
+          initialVariants.filter((x) => x.product_slug === p.slug),
+        ),
+      ]),
     ),
   );
 
@@ -274,6 +276,28 @@ export default function AdminProizvodiClient({
       },
     }));
 
+  const setVariantDiscount = (slug: string, variantSlug: string, value: string) =>
+    setState((s) => ({
+      ...s,
+      [slug]: {
+        ...s[slug],
+        variantDiscounts: { ...s[slug].variantDiscounts, [variantSlug]: value },
+        saved: false,
+        error: null,
+      },
+    }));
+
+  const setLabel = (slug: string, variantSlug: string, value: string) =>
+    setState((s) => ({
+      ...s,
+      [slug]: {
+        ...s[slug],
+        labels: { ...s[slug].labels, [variantSlug]: value },
+        saved: false,
+        error: null,
+      },
+    }));
+
   const categoryOf = (slug: string) =>
     products.find((p) => p.slug === slug)?.category_slug ?? UNASSIGNED;
 
@@ -287,22 +311,52 @@ export default function AdminProizvodiClient({
 
     // Sve cene se proveravaju pre bilo kakvog upisa — da proizvod ne ostane
     // sa pola sačuvanih pakovanja.
-    const updates: { variant_slug: string; price_rsd: number | null }[] = [];
+    const updates: {
+      variant_slug: string;
+      package_label: string;
+      price_rsd: number | null;
+      discount_percent: number | null;
+    }[] = [];
+    const seenLabels = new Set<string>();
     for (const v of rowVariants) {
-      const raw = (row.prices[v.variant_slug] ?? '').trim();
-      if (raw === '') {
-        updates.push({ variant_slug: v.variant_slug, price_rsd: null });
-        continue;
+      const label = (row.labels[v.variant_slug] ?? '').trim();
+      if (label === '' && rowVariants.length > 1) {
+        patch(slug, {
+          error: 'Kad proizvod ima više pakovanja, svako mora imati naziv (npr. 30 g).',
+          saved: false,
+        });
+        return false;
       }
-      const price = parsePrice(raw);
-      if (price === null) {
+      if (seenLabels.has(label.toLowerCase())) {
+        patch(slug, { error: `Pakovanje „${label}" je upisano dva puta.`, saved: false });
+        return false;
+      }
+      seenLabels.add(label.toLowerCase());
+
+      const raw = (row.prices[v.variant_slug] ?? '').trim();
+      const price = raw === '' ? null : parsePrice(raw);
+      if (raw !== '' && price === null) {
         patch(slug, {
           error: `Cena za ${v.package_label} mora biti broj (npr. 1890 ili 1890,50).`,
           saved: false,
         });
         return false;
       }
-      updates.push({ variant_slug: v.variant_slug, price_rsd: price });
+      const rawVariantDiscount = (row.variantDiscounts[v.variant_slug] ?? '').trim();
+      const variantDiscount = rawVariantDiscount === '' ? null : parsePct(rawVariantDiscount);
+      if (rawVariantDiscount !== '' && variantDiscount === null) {
+        patch(slug, {
+          error: `Popust za ${v.package_label} mora biti broj od 0 do 100 (ili prazno).`,
+          saved: false,
+        });
+        return false;
+      }
+      updates.push({
+        variant_slug: v.variant_slug,
+        package_label: label,
+        price_rsd: price,
+        discount_percent: variantDiscount,
+      });
     }
 
     const rawDiscount = row.discount.trim();
@@ -320,7 +374,15 @@ export default function AdminProizvodiClient({
     for (const u of updates) {
       const { error } = await supabase
         .from('product_variants')
-        .update({ price_rsd: u.price_rsd })
+        .update(
+          variantDiscountsMissing
+            ? { price_rsd: u.price_rsd, package_label: u.package_label }
+            : {
+                price_rsd: u.price_rsd,
+                package_label: u.package_label,
+                discount_percent: u.discount_percent,
+              },
+        )
         .eq('variant_slug', u.variant_slug);
       if (error) {
         patch(slug, { saving: false, error: 'Čuvanje cena nije uspelo.' });
@@ -371,7 +433,14 @@ export default function AdminProizvodiClient({
     setVariants((prev) =>
       prev.map((v) => {
         const u = updates.find((x) => x.variant_slug === v.variant_slug);
-        return u ? { ...v, price_rsd: u.price_rsd } : v;
+        return u
+          ? {
+              ...v,
+              package_label: u.package_label,
+              price_rsd: u.price_rsd,
+              discount_percent: u.discount_percent,
+            }
+          : v;
       }),
     );
     setProducts((prev) =>
@@ -398,6 +467,13 @@ export default function AdminProizvodiClient({
       prices: Object.fromEntries(
         updates.map((u) => [u.variant_slug, u.price_rsd == null ? '' : String(u.price_rsd)]),
       ),
+      variantDiscounts: Object.fromEntries(
+        updates.map((u) => [
+          u.variant_slug,
+          u.discount_percent == null ? '' : String(u.discount_percent),
+        ]),
+      ),
+      labels: Object.fromEntries(updates.map((u) => [u.variant_slug, u.package_label])),
     });
     invalidatePricingCache();
     return true;
@@ -479,6 +555,139 @@ export default function AdminProizvodiClient({
     setNotice(
       `Cene su prenete na još ${targets.length} proizvoda u kategoriji „${categoryName(category)}".`,
     );
+  };
+
+  // ── Novi proizvod, pakovanja, brisanje ──────────────────────────
+
+  const onProductCreated = (product: AdminProductRow, rowVariants: AdminVariantRow[]) => {
+    setProducts((prev) => [...prev, product]);
+    setVariants((prev) => [...prev, ...rowVariants]);
+    setState((s) => ({ ...s, [product.slug]: buildRowState(product, rowVariants) }));
+    setOpenGroups((prev) => new Set(prev).add(product.category_slug ?? UNASSIGNED));
+    setOpenEditors((prev) => new Set(prev).add(product.slug));
+    setCreatingIn(null);
+    setQuery('');
+    setFilter('sve');
+    setNotice(
+      `Proizvod „${product.name}" je napravljen. Dodaj mu slike na kartici ispod; opis, cene i popuste menjaš u „Uredi proizvod".`,
+    );
+    invalidatePricingCache();
+  };
+
+  /** Novo pakovanje (gramaža) bez cene; cena se upisuje pa „Sačuvaj izmene". */
+  const addVariant = async (slug: string) => {
+    const label = (newPackage[slug] ?? '').trim();
+    const rowVariants = variantsByProduct.get(slug) ?? [];
+    if (!label) return;
+    if (rowVariants.some((v) => v.package_label.trim().toLowerCase() === label.toLowerCase())) {
+      patch(slug, { error: `Pakovanje „${label}" već postoji.` });
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    const code = uniqueSlug(
+      slugify(label) || 'pakovanje',
+      rowVariants.map((v) => v.variant_slug.slice(slug.length + 2)),
+    );
+    const sortOrder = rowVariants.reduce((max, v) => Math.max(max, v.sort_order ?? 0), 0) + 1;
+
+    patch(slug, { saving: true, error: null, saved: false });
+    const { data, error } = await supabase
+      .from('product_variants')
+      .insert({
+        product_slug: slug,
+        variant_slug: `${slug}--${code}`,
+        package_label: label,
+        price_rsd: null,
+        sort_order: sortOrder,
+        is_active: true,
+      })
+      .select('product_slug, variant_slug, package_label, price_rsd, sort_order, is_active')
+      .single();
+    patch(slug, { saving: false });
+
+    if (error || !data) {
+      patch(slug, { error: 'Dodavanje pakovanja nije uspelo.' });
+      return;
+    }
+    const row: AdminVariantRow = { ...(data as AdminVariantRow), discount_percent: null };
+    setVariants((prev) => [...prev, row]);
+    setState((s) => ({
+      ...s,
+      [slug]: {
+        ...s[slug],
+        prices: { ...s[slug].prices, [row.variant_slug]: '' },
+        variantDiscounts: { ...s[slug].variantDiscounts, [row.variant_slug]: '' },
+        labels: { ...s[slug].labels, [row.variant_slug]: label },
+      },
+    }));
+    setNewPackage((prev) => ({ ...prev, [slug]: '' }));
+    invalidatePricingCache();
+  };
+
+  const removeVariant = async (slug: string, variantSlug: string) => {
+    const rowVariants = variantsByProduct.get(slug) ?? [];
+    if (rowVariants.length <= 1) {
+      patch(slug, { error: 'Proizvod mora imati bar jedno pakovanje, odnosno jednu cenu.' });
+      return;
+    }
+    const target = rowVariants.find((v) => v.variant_slug === variantSlug);
+    if (!window.confirm(`Obriši pakovanje „${target?.package_label || 'bez naziva'}"?`)) return;
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    patch(slug, { saving: true, error: null, saved: false });
+    const { error } = await supabase.from('product_variants').delete().eq('variant_slug', variantSlug);
+    patch(slug, { saving: false });
+    if (error) {
+      patch(slug, { error: 'Brisanje pakovanja nije uspelo.' });
+      return;
+    }
+    setVariants((prev) => prev.filter((v) => v.variant_slug !== variantSlug));
+    invalidatePricingCache();
+  };
+
+  const deleteProduct = async (slug: string) => {
+    const product = products.find((p) => p.slug === slug);
+    const label = product ? [product.name, product.shade].filter(Boolean).join(' ') : slug;
+    if (
+      !window.confirm(
+        `Obriši „${label}" zauvek? Brišu se i njegova pakovanja, cene, slike i klipovi. Stare porudžbine ostaju.`,
+      )
+    ) {
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    patch(slug, { saving: true, error: null, saved: false });
+    // `select` vraća obrisane redove: bez dozvole (migracija 0016) baza ne javi
+    // grešku, samo ne obriše ništa.
+    const { data, error } = await supabase.from('products').delete().eq('slug', slug).select('slug');
+    if (error || !data || data.length === 0) {
+      patch(slug, {
+        saving: false,
+        error: 'Brisanje nije uspelo. Pokreni supabase/setup.sql u Supabase SQL Editoru pa probaj ponovo.',
+      });
+      return;
+    }
+
+    // Fajlovi u bucket-ima više nikom ne trebaju.
+    for (const img of imagesByProduct.get(slug) ?? []) await removeImage(supabase, img.url);
+    for (const v of videosByProduct.get(slug) ?? []) {
+      await removeVideoFiles(supabase, v.url, v.poster_url ?? '');
+    }
+
+    setProducts((prev) => prev.filter((p) => p.slug !== slug));
+    setVariants((prev) => prev.filter((v) => v.product_slug !== slug));
+    setImages((prev) => prev.filter((i) => i.product_slug !== slug));
+    setVideos((prev) => prev.filter((v) => v.product_slug !== slug));
+    setNotice(`Proizvod „${label}" je obrisan.`);
+    invalidatePricingCache();
   };
 
   // ── Kategorije ──────────────────────────────────────────────────
@@ -938,7 +1147,6 @@ export default function AdminProizvodiClient({
     }
     if (filter === 'bez-cene') return hasNoPrice(p.slug);
     if (filter === 'bez-slike') return hasNoImage(p.slug);
-    if (filter === 'na-pocetnoj') return p.is_featured;
     return true;
   });
 
@@ -971,7 +1179,7 @@ export default function AdminProizvodiClient({
     });
 
   const withoutPrice = products.filter((p) => hasNoPrice(p.slug)).length;
-  const featuredCount = products.filter((p) => p.is_featured).length;
+  const onSiteCount = products.filter((p) => p.is_active).length;
 
   if (categoriesMissing || imagesMissing) {
     return (
@@ -991,19 +1199,15 @@ export default function AdminProizvodiClient({
       <h2 className="mb-2 font-display text-[22px] text-ink md:text-[26px]">Proizvodi</h2>
       <p className="mb-5 max-w-[780px] font-body text-[14px] leading-relaxed text-muted">
         Proizvodi su složeni po kategorijama. Dodirni kategoriju da se otvori, pa unesi cene, slike i
-        vidljivost. Pakovanje bez cene se na sajtu prikazuje kao{' '}
-        <span className="text-ink">{'„Cena uskoro"'}</span> i ne može da se poruči.
+        vidljivost. Pakovanje bez cene se na sajtu{' '}
+        <span className="text-ink">uopšte ne prikazuje</span> kao opcija za kupovinu.
       </p>
 
       <div className="mb-6 grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
         <Stat label="Proizvoda" value={String(products.length)} />
         <Stat label="Kategorija" value={String(categories.length)} />
         <Stat label="Čeka cenu" value={String(withoutPrice)} warn={withoutPrice > 0} />
-        <Stat
-          label="Na početnoj"
-          value={`${featuredCount} / ${FEATURED_SLOTS}`}
-          warn={featuredCount > FEATURED_SLOTS}
-        />
+        <Stat label="Na sajtu" value={String(onSiteCount)} />
       </div>
 
       <div className="mb-4 space-y-3">
@@ -1072,7 +1276,27 @@ export default function AdminProizvodiClient({
         >
           {openGroups.size > 0 ? 'Skupi sve' : 'Otvori sve'}
         </button>
+        <button
+          type="button"
+          onClick={() => setCreatingIn(creatingIn === CREATE_TOP ? null : CREATE_TOP)}
+          className={`${BTN_PRIMARY} w-full sm:ml-auto sm:w-auto`}
+        >
+          + Novi proizvod
+        </button>
       </div>
+
+      {creatingIn === CREATE_TOP ? (
+        <div className="mb-6">
+          <NewProductForm
+            categories={categories}
+            defaultCategory={categories[0]?.slug ?? ''}
+            existingSlugs={products.map((x) => x.slug)}
+            sortOrder={products.length + 1}
+            onCreated={onProductCreated}
+            onCancel={() => setCreatingIn(null)}
+          />
+        </div>
+      ) : null}
 
       {catError ? (
         <p className="mb-5 font-body text-[14px] text-danger" role="alert">
@@ -1207,13 +1431,34 @@ export default function AdminProizvodiClient({
                         </div>
                       )}
 
+                      <div className="mt-4">
+                        {creatingIn === category.slug ? (
+                          <NewProductForm
+                            categories={categories}
+                            defaultCategory={category.slug}
+                            existingSlugs={products.map((x) => x.slug)}
+                            sortOrder={products.length + 1}
+                            onCreated={onProductCreated}
+                            onCancel={() => setCreatingIn(null)}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setCreatingIn(category.slug)}
+                            className={`${BTN_PRIMARY} w-full sm:w-auto`}
+                          >
+                            + Novi proizvod u ovoj kategoriji
+                          </button>
+                        )}
+                      </div>
+
                       {addable.length > 0 ? (
                         <div className="mt-3">
                           <label
                             htmlFor={`add-to-${category.slug}`}
                             className="mb-1.5 block font-body text-[12px] text-muted"
                           >
-                            Dodaj postojeći proizvod u ovu kategoriju
+                            Ili premesti postojeći proizvod u ovu kategoriju
                           </label>
                           <select
                             id={`add-to-${category.slug}`}
@@ -1238,7 +1483,7 @@ export default function AdminProizvodiClient({
 
                   {group.items.length === 0 ? (
                     <p className="font-body text-[14px] text-muted">
-                      Kategorija je prazna — dodaj proizvod izborom iznad.
+                      Kategorija je prazna. Napravi novi proizvod dugmetom iznad.
                     </p>
                   ) : null}
 
@@ -1275,17 +1520,6 @@ export default function AdminProizvodiClient({
                                 onChange={(e) => void toggleFlag(p.slug, 'is_active', e.target.checked)}
                               />
                               Na sajtu
-                            </label>
-                            <label className="inline-flex min-h-[40px] items-center gap-2 font-body text-[13px] text-ink-soft">
-                              <input
-                                type="checkbox"
-                                className={CHECKBOX}
-                                checked={p.is_featured}
-                                onChange={(e) =>
-                                  void toggleFlag(p.slug, 'is_featured', e.target.checked)
-                                }
-                              />
-                              Na početnoj
                             </label>
                           </div>
 
@@ -1416,66 +1650,178 @@ export default function AdminProizvodiClient({
                               </div>
 
                               <div className="mt-5 border-t border-line pt-4">
-                                <p className="mb-2 font-body text-[11px] uppercase tracking-[0.12em] text-muted">
-                                  Cena po pakovanju (RSD)
+                                <label
+                                  htmlFor={`disc-${p.slug}`}
+                                  className="mb-1.5 block font-body text-[11px] uppercase tracking-[0.12em] text-muted"
+                                >
+                                  Popust na ceo proizvod % (prazno = globalni{' '}
+                                  {Math.round(siteDiscountPercent)}%)
+                                </label>
+                                <input
+                                  id={`disc-${p.slug}`}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={s.discount}
+                                  onChange={(e) =>
+                                    patch(p.slug, {
+                                      discount: e.target.value,
+                                      saved: false,
+                                      error: null,
+                                    })
+                                  }
+                                  placeholder="npr. 15"
+                                  className={`${INPUT} sm:max-w-[220px]`}
+                                />
+
+                                <p className="mb-1 mt-6 font-body text-[11px] uppercase tracking-[0.12em] text-muted">
+                                  Cena i popust po pakovanju
                                 </p>
-                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                <p className="mb-3 max-w-[640px] font-body text-[12px] leading-relaxed text-muted">
+                                  Gornje polje u svakoj kartici je naziv pakovanja (npr. 30 g).
+                                  Proizvod bez gramaže ima jedno pakovanje sa praznim nazivom i jednu
+                                  cenu. Popust upisan kod pakovanja važi samo za tu gramažu i ima
+                                  prednost nad popustom na ceo proizvod. Prazno = važi popust iznad.
+                                  0 = ta gramaža bez popusta.
+                                </p>
+                                {variantDiscountsMissing ? (
+                                  <p className="mb-3 font-body text-[12px] leading-relaxed text-danger">
+                                    Popust po pakovanju još nije uključen u bazi. Pokreni{' '}
+                                    <span className="font-mono">supabase/setup.sql</span> pa osveži
+                                    stranicu.
+                                  </p>
+                                ) : null}
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                   {rowVariants.map((v) => {
                                     const raw = (s.prices[v.variant_slug] ?? '').trim();
                                     const price = raw === '' ? null : parsePrice(raw);
+                                    const rawVariantDiscount = (
+                                      s.variantDiscounts[v.variant_slug] ?? ''
+                                    ).trim();
+                                    const variantPct =
+                                      rawVariantDiscount === ''
+                                        ? pct
+                                        : (parsePct(rawVariantDiscount) ?? 0);
                                     return (
-                                      <div key={v.variant_slug}>
-                                        <label
-                                          htmlFor={`price-${v.variant_slug}`}
-                                          className="mb-1.5 block font-body text-[13px] text-ink-soft"
-                                        >
-                                          {v.package_label}
-                                        </label>
-                                        <input
-                                          id={`price-${v.variant_slug}`}
-                                          type="text"
-                                          inputMode="decimal"
-                                          value={s.prices[v.variant_slug] ?? ''}
-                                          onChange={(e) =>
-                                            setPrice(p.slug, v.variant_slug, e.target.value)
-                                          }
-                                          placeholder="npr. 2490"
-                                          className={INPUT}
-                                        />
-                                        <p className="mt-1 font-body text-[12px] tabular-nums text-muted">
-                                          {price != null && price > 0
-                                            ? `${formatRsd(discountedUnitPriceRsd(price, pct))}${
-                                                pct > 0 ? ` (−${Math.round(pct)}%)` : ''
-                                              }`
-                                            : 'Cena uskoro'}
+                                      <div
+                                        key={v.variant_slug}
+                                        className="border border-line bg-canvas p-3"
+                                      >
+                                        <div className="mb-2 flex items-center gap-2">
+                                          <label htmlFor={`label-${v.variant_slug}`} className="sr-only">
+                                            Naziv pakovanja
+                                          </label>
+                                          <input
+                                            id={`label-${v.variant_slug}`}
+                                            type="text"
+                                            value={s.labels[v.variant_slug] ?? ''}
+                                            onChange={(e) =>
+                                              setLabel(p.slug, v.variant_slug, e.target.value)
+                                            }
+                                            placeholder={
+                                              rowVariants.length > 1 ? 'npr. 30 g' : 'bez gramaže'
+                                            }
+                                            className={`${INPUT} [font-variant-numeric:normal]`}
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => void removeVariant(p.slug, v.variant_slug)}
+                                            disabled={s.saving || rowVariants.length <= 1}
+                                            aria-label="Obriši pakovanje"
+                                            title="Obriši pakovanje"
+                                            className={`${BTN_QUIET} min-h-[44px] w-11 shrink-0 hover:border-danger hover:text-danger`}
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                        <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+                                          <div>
+                                            <label
+                                              htmlFor={`price-${v.variant_slug}`}
+                                              className="mb-1 block font-body text-[11px] text-muted"
+                                            >
+                                              Cena (RSD)
+                                            </label>
+                                            <input
+                                              id={`price-${v.variant_slug}`}
+                                              type="text"
+                                              inputMode="decimal"
+                                              value={s.prices[v.variant_slug] ?? ''}
+                                              onChange={(e) =>
+                                                setPrice(p.slug, v.variant_slug, e.target.value)
+                                              }
+                                              placeholder="npr. 2490"
+                                              className={INPUT}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label
+                                              htmlFor={`vdisc-${v.variant_slug}`}
+                                              className="mb-1 block font-body text-[11px] text-muted"
+                                            >
+                                              Popust %
+                                            </label>
+                                            <input
+                                              id={`vdisc-${v.variant_slug}`}
+                                              type="text"
+                                              inputMode="decimal"
+                                              value={s.variantDiscounts[v.variant_slug] ?? ''}
+                                              onChange={(e) =>
+                                                setVariantDiscount(
+                                                  p.slug,
+                                                  v.variant_slug,
+                                                  e.target.value,
+                                                )
+                                              }
+                                              // Siv broj = popust koji važi dok ovde nije upisan svoj.
+                                              placeholder={String(Math.round(pct))}
+                                              disabled={variantDiscountsMissing}
+                                              className={`${INPUT} disabled:opacity-50`}
+                                            />
+                                          </div>
+                                        </div>
+                                        <p className="mt-1.5 font-body text-[12px] tabular-nums text-muted">
+                                          {price != null && price > 0 ? (
+                                            <>
+                                              Kupac plaća{' '}
+                                              <span className="text-ink">
+                                                {formatRsd(discountedUnitPriceRsd(price, variantPct))}
+                                              </span>
+                                              {variantPct > 0 ? ` (−${Math.round(variantPct)}%)` : ''}
+                                            </>
+                                          ) : (
+                                            'Bez cene: ne prikazuje se na sajtu'
+                                          )}
                                         </p>
                                       </div>
                                     );
                                   })}
                                 </div>
 
-                                <div className="mt-4">
-                                  <label
-                                    htmlFor={`disc-${p.slug}`}
-                                    className="mb-1.5 block font-body text-[11px] uppercase tracking-[0.12em] text-muted"
-                                  >
-                                    Popust % (prazno = globalni {Math.round(siteDiscountPercent)}%)
+                                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                  <label htmlFor={`newpkg-${p.slug}`} className="sr-only">
+                                    Naziv novog pakovanja
                                   </label>
                                   <input
-                                    id={`disc-${p.slug}`}
+                                    id={`newpkg-${p.slug}`}
                                     type="text"
-                                    inputMode="decimal"
-                                    value={s.discount}
+                                    value={newPackage[p.slug] ?? ''}
                                     onChange={(e) =>
-                                      patch(p.slug, {
-                                        discount: e.target.value,
-                                        saved: false,
-                                        error: null,
-                                      })
+                                      setNewPackage((prev) => ({ ...prev, [p.slug]: e.target.value }))
                                     }
-                                    placeholder="npr. 15"
-                                    className={`${INPUT} sm:max-w-[220px]`}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') void addVariant(p.slug);
+                                    }}
+                                    placeholder="Nova gramaža, npr. 100 g"
+                                    className={`${INPUT} [font-variant-numeric:normal] sm:max-w-[240px]`}
                                   />
+                                  <button
+                                    type="button"
+                                    onClick={() => void addVariant(p.slug)}
+                                    disabled={s.saving || (newPackage[p.slug] ?? '').trim() === ''}
+                                    className={`${BTN_QUIET} w-full sm:w-auto`}
+                                  >
+                                    + Dodaj pakovanje
+                                  </button>
                                 </div>
                               </div>
 
@@ -1498,6 +1844,17 @@ export default function AdminProizvodiClient({
                                   Prenesi ove cene na svih {lineSize} u kategoriji
                                 </button>
                               ) : null}
+
+                              <div className="mt-6 border-t border-line pt-4">
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteProduct(p.slug)}
+                                  disabled={s.saving}
+                                  className={`${BTN_QUIET} w-full hover:border-danger hover:text-danger sm:w-auto`}
+                                >
+                                  Obriši proizvod
+                                </button>
+                              </div>
                             </div>
                           ) : null}
 
@@ -1524,9 +1881,9 @@ export default function AdminProizvodiClient({
       ) : null}
 
       <p className="mt-6 font-body text-[13px] leading-relaxed text-muted">
-        Nazivi, nijanse, opisi i način primene dolaze iz tabele proizvoda i menjaju se u kodu (
-        <span className="font-mono">lib/data/products.ts</span>). Kategorije, cene, popusti, slike,{' '}
-        {'„Na sajtu"'} i {'„Na početnoj"'} se menjaju ovde.
+        Sve o proizvodu se menja ovde: naziv, opis, pakovanja, cene, popusti, slike i{' '}
+        {'„Na sajtu"'}. Novi proizvod praviš dugmetom {'„Novi proizvod"'}, a brišeš ga u{' '}
+        {'„Uredi proizvod"'}. Početna strana se uređuje u kartici {'„Početna strana"'}.
       </p>
     </div>
   );

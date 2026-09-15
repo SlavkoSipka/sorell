@@ -74,8 +74,11 @@ Ostalo što najčešće zapne:
 | --- | --- |
 | **Pregled** | Promet, porudžbine po statusu i stanje kataloga (koliko proizvoda čeka cenu ili sliku, koliko je na početnoj). |
 | **Porudžbine** | Lista, pretraga i promena statusa (poručeno → kontaktiran → poslato → plaćeno / odbijeno). |
-| **Proizvodi** | Cena po pakovanju, popust, slika, „Na sajtu", „Na početnoj". |
-| **Podešavanja** | Globalni popust, paketni popust, promo kodovi. |
+| **Proizvodi** | Cena po pakovanju, popust, slika, „Na sajtu". |
+| **Popusti** | Globalni popust, paketni popust, promo kodovi. |
+| **Početna strana** | Slajdovi na vrhu (svaki sa linkom) i baner ispod njih. |
+| **Salon** | Fotografija, kontakt i cenovnik usluga. |
+| **Boje zaglavlja** | Boje trake i menija na vrhu. |
 
 Na stranici **Proizvodi**: pretraga po nazivu/nijansi, filteri „Bez cene / Bez slike / Na početnoj",
 lista je grupisana po linijama. Dugme **„Sačuvaj i prenesi ove cene na svih N nijansi u liniji"**
@@ -102,7 +105,7 @@ kataloga da sekcija ne bi bila prazna.
 | Cenovnik usluga salona | `lib/data/services.ts` |
 | Poštarina i prag besplatne dostave | `lib/shipping.ts` |
 | Boje, fontovi, razmaci | `app/globals.css` (`@theme inline`) |
-| Globalni popust, paketni popust, promo kodovi | Admin → Podešavanja |
+| Globalni popust, paketni popust, promo kodovi | Admin → Popusti |
 
 ### Slike proizvoda
 
@@ -157,7 +160,7 @@ app/
   usluge, kontakt, o-nama salon i info stranice
   korpa, porudzbina, zahvalnica
   prijava                 prijava na panel
-  admin/                  Pregled · Porudžbine · Proizvodi · Podešavanja
+  admin/                  Pregled · Porudžbine · Proizvodi · Popusti · Početna · Salon · Izgled
   api/orders              prijem porudžbine (service role)
   api/discount-code       provera promo koda
   api/admin/orders        lista/pretraga za panel

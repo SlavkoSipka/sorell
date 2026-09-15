@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { SorelleWordmark } from '@/components/layout/SorelleLogo';
 import { SITE } from '@/lib/site-config';
 import {
   DEFAULT_HEADER_THEME,
@@ -36,7 +37,7 @@ function Preview({ theme }: { theme: HeaderTheme }) {
           borderBottom: `1px solid ${theme.navBorder}`,
         }}
       >
-        <span className="font-display text-[16px] leading-none">{SITE.brandName}</span>
+        <SorelleWordmark className="h-[12px] w-auto" title={SITE.brandName} />
         <span className="hidden gap-5 font-body text-[10px] uppercase tracking-[0.14em] sm:flex">
           <span style={{ opacity: 0.68 }}>Proizvodi</span>
           <span style={{ opacity: 0.68 }}>Usluge</span>

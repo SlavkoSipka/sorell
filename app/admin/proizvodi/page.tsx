@@ -19,6 +19,7 @@ export default async function AdminProizvodiPage() {
     { data: productImages, error: imagesError },
     { data: productVideos, error: videosError },
     { data: settings },
+    { data: variantDiscounts, error: variantDiscountsError },
   ] = await Promise.all([
     supabase
       .from('products')
@@ -47,6 +48,8 @@ export default async function AdminProizvodiPage() {
       .order('sort_order', { ascending: true })
       .order('id', { ascending: true }),
     supabase.from('site_settings').select('site_discount_percent').eq('id', 1).maybeSingle(),
+    // Odvojen upit: bez migracije 0015 panel radi, samo bez popusta po pakovanju.
+    supabase.from('product_variants').select('variant_slug, discount_percent'),
   ]);
 
   const failure = error ?? variantsError;
@@ -63,10 +66,19 @@ export default async function AdminProizvodiPage() {
     (settings as { site_discount_percent?: number | string } | null)?.site_discount_percent ?? 0,
   );
 
+  const discountByVariant = new Map(
+    (
+      (variantDiscounts ?? []) as { variant_slug: string; discount_percent: number | string | null }[]
+    ).map((r) => [r.variant_slug, r.discount_percent]),
+  );
+
   return (
     <AdminProizvodiClient
       initialProducts={(products ?? []) as AdminProductRow[]}
-      initialVariants={(variants ?? []) as AdminVariantRow[]}
+      initialVariants={((variants ?? []) as AdminVariantRow[]).map((v) => ({
+        ...v,
+        discount_percent: discountByVariant.get(v.variant_slug) ?? null,
+      }))}
       initialCategories={(categories ?? []) as AdminCategoryRow[]}
       initialImages={(productImages ?? []) as AdminImageRow[]}
       initialVideos={(productVideos ?? []) as AdminVideoRow[]}
@@ -76,6 +88,7 @@ export default async function AdminProizvodiPage() {
       // Klipovi su dodatak: bez migracije 0008 panel radi, samo bez te sekcije.
       videosMissing={Boolean(videosError)}
       siteDiscountPercent={siteDiscount}
+      variantDiscountsMissing={Boolean(variantDiscountsError)}
     />
   );
 }

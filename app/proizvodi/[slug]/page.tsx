@@ -5,7 +5,7 @@ import ScrollRevealInit from '@/components/ScrollRevealInit';
 import Media from '@/components/ui/Media';
 import { ProductFromPrice } from '@/components/product/ProductPrice';
 import VariantPicker from '@/components/product/VariantPicker';
-import { getProductBySlug, products } from '@/lib/data/products';
+import { variantKey } from '@/lib/data/products';
 import ProductGallery from '@/components/product/ProductGallery';
 import {
   categorySlugOf,
@@ -19,14 +19,17 @@ import {
 
 type Params = { params: Promise<{ slug: string }> };
 
-export function generateStaticParams() {
-  return products.map((p) => ({ slug: p.slug }));
+export async function generateStaticParams() {
+  const { catalog } = await getProductOverrides();
+  return catalog.map((p) => ({ slug: p.slug }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
-  if (!product) return { title: 'Proizvod nije pronađen' };
+  const overrides = await getProductOverrides();
+  const found = overrides.catalog.find((p) => p.slug === slug);
+  if (!found) return { title: 'Proizvod nije pronađen' };
+  const product = mergeProduct(found, overrides);
 
   const title = product.shade ? `${product.name} — ${product.shade}` : product.name;
   const description = product.features[0];
@@ -41,10 +44,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ProductPage({ params }: Params) {
   const { slug } = await params;
-  const catalogProduct = getProductBySlug(slug);
+  const overrides = await getProductOverrides();
+  // Spisak dolazi iz baze, pa ovde stižu i proizvodi napravljeni u adminu.
+  const catalogProduct = overrides.catalog.find((p) => p.slug === slug);
   if (!catalogProduct) notFound();
 
-  const overrides = await getProductOverrides();
   // Naziv, nijansa i opisi dolaze iz admina kad su tamo uneti.
   const product = mergeProduct(catalogProduct, overrides);
   const isAvailable = !overrides.inactiveSlugs.has(product.slug);
@@ -60,7 +64,7 @@ export default async function ProductPage({ params }: Params) {
     overrides.categories.find((c) => c.slug === categorySlug)?.label ?? product.category;
 
   // Ostale nijanse iste linije — najkorisniji „dalje" izbor u okviru kataloga.
-  const sameLine = products.filter(
+  const sameLine = overrides.catalog.filter(
     (p) =>
       categorySlugOf(p.slug, overrides) === categorySlug &&
       p.slug !== product.slug &&
@@ -68,12 +72,13 @@ export default async function ProductPage({ params }: Params) {
   );
   // Iz iste linije idu sve nijanse — na kompu se prelome u redove po četiri,
   // na telefonu se prevlače. Rezervni izbor (kad linija nema drugih) se skraćuje.
-  const others =
+  const others = (
     sameLine.length > 0
       ? sameLine
-      : products
+      : overrides.catalog
           .filter((p) => p.slug !== product.slug && !overrides.inactiveSlugs.has(p.slug))
-          .slice(0, 8);
+          .slice(0, 8)
+  ).map((p) => mergeProduct(p, overrides));
 
   return (
     <main>
@@ -147,7 +152,15 @@ export default async function ProductPage({ params }: Params) {
 
             {/* 3 · Izbor pakovanja + cena — pre opisa proizvoda */}
             <div className="mt-7 border-t border-line pt-7">
-              <VariantPicker product={product} image={mainImage} isAvailable={isAvailable} />
+              <VariantPicker
+                product={product}
+                image={mainImage}
+                isAvailable={isAvailable}
+                // Pakovanje bez cene se ne nudi; ovo je spisak za prvi prikaz, pre učitavanja cena.
+                pricedCodes={product.variants
+                  .filter((v) => overrides.priceByVariant.has(variantKey(product.slug, v.code)))
+                  .map((v) => v.code)}
+              />
             </div>
 
             {/* 4 · Opis proizvoda — odmah ispod dugmeta, uz cenu */}
@@ -171,41 +184,47 @@ export default async function ProductPage({ params }: Params) {
         </div>
       </div>
 
-      {/* 5 · Način primene */}
-      <section className="border-y border-line bg-surface">
-        <div className="mx-auto max-w-[1200px] px-5 py-14 md:px-8 md:py-20">
-          <div data-reveal="true" className="max-w-[760px]">
-            <h2 className="font-display text-[24px] text-ink">Način primene</h2>
-            <p className="mt-5 font-body text-[15px] font-semibold leading-relaxed text-ink-soft">
-              {product.howToUse}
-            </p>
+      {/* 5 · Način primene (proizvod napravljen u adminu ne mora da ga ima) */}
+      {product.howToUse ? (
+        <section className="border-y border-line bg-surface">
+          <div className="mx-auto max-w-[1200px] px-5 py-14 md:px-8 md:py-20">
+            <div data-reveal="true" className="max-w-[760px]">
+              <h2 className="font-display text-[24px] text-ink">Način primene</h2>
+              <p className="mt-5 font-body text-[15px] font-semibold leading-relaxed text-ink-soft">
+                {product.howToUse}
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {/* 6 · Kvalitet i usklađenost  ·  7 · EU usklađenost */}
-      <section className="border-b border-line">
-        <div className="mx-auto max-w-[1200px] px-5 py-12 md:px-8 md:py-16">
-          <h2 className="font-display text-[24px] text-ink">Kvalitet i usklađenost</h2>
-          <div className="mt-6 flex flex-wrap gap-2">
-            {product.formulation.split('•').map((part) => {
-              const label = part.trim();
-              if (!label) return null;
-              return (
-                <span
-                  key={label}
-                  className="rounded-card border border-line-strong bg-canvas px-4 py-2 font-body text-[13px] uppercase tracking-[0.12em] text-ink"
-                >
-                  {label}
-                </span>
-              );
-            })}
+      {product.formulation || product.euCompliance ? (
+        <section className="border-b border-line">
+          <div className="mx-auto max-w-[1200px] px-5 py-12 md:px-8 md:py-16">
+            <h2 className="font-display text-[24px] text-ink">Kvalitet i usklađenost</h2>
+            <div className="mt-6 flex flex-wrap gap-2">
+              {product.formulation.split('•').map((part) => {
+                const label = part.trim();
+                if (!label) return null;
+                return (
+                  <span
+                    key={label}
+                    className="rounded-card border border-line-strong bg-canvas px-4 py-2 font-body text-[13px] uppercase tracking-[0.12em] text-ink"
+                  >
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+            {product.euCompliance ? (
+              <p className="mt-5 font-body text-[15px] font-semibold leading-relaxed text-ink-soft">
+                {product.euCompliance}
+              </p>
+            ) : null}
           </div>
-          <p className="mt-5 font-body text-[15px] font-semibold leading-relaxed text-ink-soft">
-            {product.euCompliance}
-          </p>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {/* Ostale nijanse iz iste linije */}
       {others.length > 0 ? (

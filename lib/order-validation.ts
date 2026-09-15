@@ -14,7 +14,7 @@ export type ParsedOrderLine = {
   quantity: number;
   basePriceRsd: number;
   image: string;
-  /** Popust po proizvodu u %. NULL = koristi se globalni popust. */
+  /** Popust po pakovanju ili proizvodu u %. NULL = koristi se globalni popust. */
   discountPercent: number | null;
   isBundle?: boolean;
   bundleId?: string;
@@ -43,6 +43,8 @@ export type VariantLookup = (key: string) => {
 export function buildVariantLookup(
   dbProducts: DbProduct[],
   dbVariants: DbVariant[],
+  /** Nijanse iz baze; kad su tu, naziv stavke se sklapa iz baze, isto kao na sajtu. */
+  shadeBySlug?: Map<string, string>,
 ): VariantLookup {
   const productBySlug = new Map(dbProducts.map((p) => [p.slug, p]));
   const variantBySlug = new Map(
@@ -59,18 +61,32 @@ export function buildVariantLookup(
     const price = variant.price_rsd == null ? NaN : Number(variant.price_rsd);
     const priceMissing = !Number.isFinite(price) || price <= 0;
 
-    // Naziv se sklapa iz kataloga (nijansa + pakovanje); ako proizvoda nema u
-    // kodu, pada se na naziv iz baze da porudžbina i dalje bude čitljiva.
+    // Naziv: naziv + nijansa iz baze + pakovanje (proizvod napravljen u adminu
+    // nema red u kodu). Bez nijansi iz baze pada se na katalog iz koda.
+    const label = variant.package_label ?? '';
     const ref = getVariantByKey(key);
-    const name = ref
-      ? variantDisplayName(ref.product, ref.variant)
-      : `${product.name} (${variant.package_label})`;
+    let name: string;
+    if (shadeBySlug) {
+      const shade = shadeBySlug.get(product.slug) ?? '';
+      const base = shade ? `${product.name} — ${shade}` : product.name;
+      name = label ? `${base} (${label})` : base;
+    } else if (ref) {
+      name = variantDisplayName(ref.product, ref.variant);
+    } else {
+      name = label ? `${product.name} (${label})` : product.name;
+    }
 
     return {
       name,
       basePriceRsd: priceMissing ? 0 : price,
       image: product.image_path ?? '',
-      discountPercent: product.discount_percent == null ? null : Number(product.discount_percent),
+      // Popust upisan na pakovanje ima prednost nad popustom na proizvod.
+      discountPercent:
+        variant.discount_percent != null
+          ? Number(variant.discount_percent)
+          : product.discount_percent == null
+            ? null
+            : Number(product.discount_percent),
       priceMissing,
     };
   };

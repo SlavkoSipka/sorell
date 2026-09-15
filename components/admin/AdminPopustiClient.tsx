@@ -5,13 +5,6 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { invalidatePricingCache } from '@/lib/use-pricing-data';
 import { BUNDLE_DEFINITIONS } from '@/lib/pricing-engine';
 import { getBundleBySlug } from '@/lib/data/products';
-import AdminHeroImage from '@/components/admin/AdminHeroImage';
-import HeaderThemeEditor from '@/components/admin/HeaderThemeEditor';
-import AdminSalonSection, {
-  type AdminServiceGroupRow,
-  type AdminServiceRow,
-} from '@/components/admin/AdminSalonSection';
-import type { HeaderTheme } from '@/lib/theme';
 
 export type DiscountCodeRow = {
   id: number;
@@ -22,20 +15,8 @@ export type DiscountCodeRow = {
 };
 
 type Props = {
-  initialTheme: HeaderTheme;
-  initialSalonImage: string;
-  initialSalonPhone: string;
-  initialSalonTitle: string;
-  initialSalonIntro: string;
-  initialSalonAddress: string;
-  initialSalonCity: string;
-  initialServiceGroups: AdminServiceGroupRow[];
-  initialServices: AdminServiceRow[];
-  salonMissing: boolean;
   initialSiteDiscount: number;
   initialBundleDiscount: number;
-  initialHeroImage: string;
-  initialHeroLink: string;
   initialCodes: DiscountCodeRow[];
   codesError: string | null;
 };
@@ -46,21 +27,9 @@ function parsePct(raw: string): number | null {
   return Math.round(v * 100) / 100;
 }
 
-export default function AdminPodesavanjaClient({
-  initialTheme,
-  initialSalonImage,
-  initialSalonPhone,
-  initialSalonTitle,
-  initialSalonIntro,
-  initialSalonAddress,
-  initialSalonCity,
-  initialServiceGroups,
-  initialServices,
-  salonMissing,
+export default function AdminPopustiClient({
   initialSiteDiscount,
   initialBundleDiscount,
-  initialHeroImage,
-  initialHeroLink,
   initialCodes,
   codesError,
 }: Props) {
@@ -176,34 +145,12 @@ export default function AdminPodesavanjaClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="mb-2 font-display text-[22px] text-ink md:text-[26px]">Podešavanja</h2>
-        <p className="max-w-[720px] font-body text-[13px] leading-relaxed text-muted">
-          Popusti važe odmah — i na sajtu i pri poručivanju (server ponovo računa iznos).
-        </p>
-      </div>
-
-      <AdminHeroImage initialUrl={initialHeroImage} initialLink={initialHeroLink} />
-
-      <HeaderThemeEditor initialTheme={initialTheme} />
-
-      <AdminSalonSection
-        initialImage={initialSalonImage}
-        initialPhone={initialSalonPhone}
-        initialTitle={initialSalonTitle}
-        initialIntro={initialSalonIntro}
-        initialAddress={initialSalonAddress}
-        initialCity={initialSalonCity}
-        initialGroups={initialServiceGroups}
-        initialServices={initialServices}
-        missing={salonMissing}
-      />
-
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="border border-line bg-canvas p-5 md:p-6">
           <h3 className="font-display text-[18px] text-ink">Globalni popust</h3>
           <p className="mt-1.5 font-body text-[14px] leading-relaxed text-muted">
-            Primenjuje se na sve proizvode koji nemaju svoj popust (kartica Proizvodi).
+            Primenjuje se na sve proizvode i pakovanja koji nemaju svoj popust (kartica
+            Proizvodi).
           </p>
           <div className="mt-4 flex gap-2">
             <input
@@ -387,24 +334,6 @@ export default function AdminPodesavanjaClient({
             ))}
           </ul>
         )}
-      </section>
-
-      <section className="border border-line bg-canvas p-5 md:p-6">
-        <h3 className="font-display text-[18px] text-ink">Sadržaj sajta</h3>
-        <ul className="mt-3 space-y-1.5 font-body text-[13px] leading-relaxed text-muted">
-          <li>
-            Naziv brenda, logo, adresa, radno vreme i tekst poruka u traci:{' '}
-            <span className="font-mono text-ink">lib/site-config.ts</span>
-          </li>
-          <li>
-            Proizvodi (nazivi, opisi, sastojci, slike):{' '}
-            <span className="font-mono text-ink">lib/data/products.ts</span>
-          </li>
-          <li>
-            Poštarina i prag besplatne dostave:{' '}
-            <span className="font-mono text-ink">lib/shipping.ts</span>
-          </li>
-        </ul>
       </section>
     </div>
   );

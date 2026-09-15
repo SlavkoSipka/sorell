@@ -1,6 +1,13 @@
 import 'server-only';
 
-import { CATEGORIES, products, variantKey, type Product } from '@/lib/data/products';
+import {
+  CATEGORIES,
+  getProductBySlug,
+  products,
+  variantKey,
+  type Product,
+  type ProductVariant,
+} from '@/lib/data/products';
 import { placeholderImage } from '@/lib/data/product-images';
 
 /**
@@ -35,7 +42,19 @@ export type ProductVideo = {
   poster: string;
 };
 
+/** Slajd u zaglavlju početne. `link` prazno = slajd nije link. */
+export type HeroSlide = {
+  image: string;
+  link: string;
+  alt: string;
+};
+
 export type ProductOverrides = {
+  /**
+   * Proizvodi sa pakovanjima, redom iz admina. Spisak dolazi iz baze (tu se
+   * prave i novi proizvodi); bez baze je to katalog iz koda.
+   */
+  catalog: Product[];
   /** Proizvodi isključeni u adminu (`products.is_active = false`). */
   inactiveSlugs: Set<string>;
   /** Proizvodi izdvojeni za početnu stranu (`products.is_featured = true`). */
@@ -58,6 +77,8 @@ export type ProductOverrides = {
   heroImage: string;
   /** Gde vodi klik na hero sliku. Prazno = slika nije link. */
   heroLink: string;
+  /** Slajdovi na početnoj, redom. null = tabela još ne postoji (koristi se `heroImage`). */
+  heroSlides: HeroSlide[] | null;
   /** Linije iz admina, u redosledu prikaza. Prazno = baza još nema kategorije. */
   categories: Category[];
   /** Kojoj liniji proizvod pripada po adminu; bez ključa = nerazvrstan. */
@@ -65,6 +86,7 @@ export type ProductOverrides = {
 };
 
 const EMPTY: ProductOverrides = {
+  catalog: products,
   inactiveSlugs: new Set(),
   featuredSlugs: new Set(),
   imageBySlug: new Map(),
@@ -76,6 +98,7 @@ const EMPTY: ProductOverrides = {
   instagramBySlug: new Map(),
   heroImage: '',
   heroLink: '',
+  heroSlides: null,
   categories: [],
   categoryByProduct: new Map(),
 };
@@ -100,7 +123,7 @@ async function restGet<T>(path: string): Promise<T[] | null> {
 }
 
 export async function getProductOverrides(): Promise<ProductOverrides> {
-  const [productRows, variantRows, categoryRows, imageRows, videoRows, settingsRows] =
+  const [productRows, variantRows, categoryRows, imageRows, videoRows, settingsRows, slideRows] =
     await Promise.all([
     restGet<{
       slug: string;
@@ -117,10 +140,16 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
       volume: string | null;
       instagram_url: string | null;
     }>(
-      'products?select=slug,image_path,is_active,is_featured,category_slug,name,shade,features,how_to_use,formulation,eu_compliance,volume,instagram_url',
+      'products?select=slug,image_path,is_active,is_featured,category_slug,name,shade,features,how_to_use,formulation,eu_compliance,volume,instagram_url&order=sort_order.asc&order=id.asc',
     ),
-    restGet<{ variant_slug: string; price_rsd: number | string | null; is_active: boolean }>(
-      'product_variants?select=variant_slug,price_rsd,is_active',
+    restGet<{
+      product_slug: string;
+      variant_slug: string;
+      package_label: string | null;
+      price_rsd: number | string | null;
+      is_active: boolean;
+    }>(
+      'product_variants?select=product_slug,variant_slug,package_label,price_rsd,is_active&order=sort_order.asc&order=id.asc',
     ),
     restGet<{ slug: string; name: string; is_active: boolean }>(
       'categories?select=slug,name,is_active&order=sort_order.asc&order=id.asc',
@@ -133,6 +162,9 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
     ),
     restGet<{ hero_image_path: string | null; hero_link_url: string | null }>(
       'site_settings?select=hero_image_path,hero_link_url&id=eq.1',
+    ),
+    restGet<{ image_url: string; link_url: string | null; alt: string | null }>(
+      'hero_slides?select=image_url,link_url,alt&is_active=eq.true&order=sort_order.asc&order=id.asc',
     ),
   ]);
 
@@ -181,7 +213,17 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
   const heroImage = settingsRows?.[0]?.hero_image_path ?? '';
   // Vrednost ide u href, pa se propušta samo interna putanja ili http(s).
   const heroLinkRaw = (settingsRows?.[0]?.hero_link_url ?? '').trim();
-  const heroLink = /^(\/|https?:\/\/)\S*$/.test(heroLinkRaw) ? heroLinkRaw : '';
+  const heroLink = safeHref(heroLinkRaw);
+  // Bez migracije 0013 `slideRows` je null — Hero tada prikazuje staru jednu sliku.
+  const heroSlides: HeroSlide[] | null = slideRows
+    ? slideRows
+        .filter((row) => row.image_url)
+        .map((row) => ({
+          image: row.image_url,
+          link: safeHref(row.link_url ?? ''),
+          alt: row.alt ?? '',
+        }))
+    : null;
 
   const categories: Category[] = (categoryRows ?? []).map((c) => ({
     slug: c.slug,
@@ -196,8 +238,48 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
     if (Number.isFinite(price) && price > 0) priceByVariant.set(row.variant_slug, price);
   }
 
+  // Pakovanja iz baze, redom iz admina. Ključ je uvek `slug--kod`, pa se kod
+  // čita iz ključa; pakovanje bez naziva = proizvod sa jednom cenom.
+  const variantsByProduct = new Map<string, ProductVariant[]>();
+  for (const row of variantRows ?? []) {
+    const prefix = `${row.product_slug}--`;
+    if (!row.variant_slug.startsWith(prefix)) continue;
+    const list = variantsByProduct.get(row.product_slug) ?? [];
+    list.push({ code: row.variant_slug.slice(prefix.length), label: row.package_label ?? '' });
+    variantsByProduct.set(row.product_slug, list);
+  }
+
+  // Spisak proizvoda je iz baze, pa se vide i oni napravljeni u adminu, a
+  // obrisani nestaju. Katalog iz koda popunjava ono što u bazi fali.
+  const categoryLabels = new Map(categories.map((c) => [c.slug, c.label]));
+  const catalog: Product[] = productRows
+    ? productRows.map((row) => {
+        const base: Product = getProductBySlug(row.slug) ?? {
+          slug: row.slug,
+          category: '',
+          categorySlug: '',
+          lineLabel: '',
+          name: row.name?.trim() || row.slug,
+          shade: '',
+          features: [],
+          howToUse: '',
+          formulation: '',
+          euCompliance: '',
+          packagesLabel: '',
+          variants: [],
+        };
+        const categorySlug = row.category_slug ?? base.categorySlug;
+        return {
+          ...base,
+          categorySlug,
+          category: categoryLabels.get(categorySlug) ?? base.category,
+          variants: variantsByProduct.get(row.slug) ?? (variantRows ? [] : base.variants),
+        };
+      })
+    : products;
+
   const fromPriceBySlug = new Map<string, number>();
-  for (const p of products) {
+  for (const p of catalog) {
     const prices = p.variants
       .map((v) => priceByVariant.get(variantKey(p.slug, v.code)))
       .filter((n): n is number => n !== undefined);
@@ -205,6 +287,7 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
   }
 
   return {
+    catalog,
     inactiveSlugs,
     featuredSlugs,
     imageBySlug,
@@ -216,9 +299,16 @@ export async function getProductOverrides(): Promise<ProductOverrides> {
     instagramBySlug,
     heroImage,
     heroLink,
+    heroSlides,
     categories,
     categoryByProduct,
   };
+}
+
+/** Vrednost ide u href, pa se propušta samo interna putanja ili http(s). */
+function safeHref(raw: string): string {
+  const v = raw.trim();
+  return /^(\/|https?:\/\/)\S*$/.test(v) ? v : '';
 }
 
 /**

@@ -21,7 +21,7 @@ export default async function AdminPregledPage() {
       .from('orders')
       .select('total_rsd, shipping_rsd, status, created_at, customer_first_name, customer_last_name')
       .order('created_at', { ascending: false }),
-    supabase.from('products').select('slug, image_path, is_active, is_featured'),
+    supabase.from('products').select('slug, image_path, is_active'),
     supabase.from('product_variants').select('product_slug, price_rsd'),
   ]);
 
@@ -67,7 +67,6 @@ export default async function AdminPregledPage() {
     slug: string;
     image_path: string | null;
     is_active: boolean;
-    is_featured: boolean;
   }[];
   const bezCene = new Set(
     ((variantRows ?? []) as { product_slug: string; price_rsd: number | string | null }[])
@@ -78,7 +77,6 @@ export default async function AdminPregledPage() {
     ukupno: katalogProizvodi.length,
     bezCene: katalogProizvodi.filter((p) => bezCene.has(p.slug)).length,
     bezSlike: katalogProizvodi.filter((p) => !p.image_path).length,
-    naPocetnoj: katalogProizvodi.filter((p) => p.is_featured).length,
     iskljuceno: katalogProizvodi.filter((p) => !p.is_active).length,
   };
 

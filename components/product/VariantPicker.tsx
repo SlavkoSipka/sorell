@@ -12,41 +12,53 @@ import { discountedUnitPriceRsd, formatRsd, PRICE_PENDING_LABEL } from '@/lib/pr
 import { effectiveDiscountPercent, usePricingData } from '@/lib/use-pricing-data';
 
 /**
- * Izbor pakovanja i cena — stoji odmah ispod fotografije, pre opisa proizvoda
+ * Izbor pakovanja i cena, odmah ispod fotografije, pre opisa proizvoda
  * (raspored sa lista „Raspored na sajtu", tačka 3).
  *
- * Cena zavisi od pakovanja i čita se iz `product_variants`. Dok cena nije uneta
- * u adminu, pakovanje se prikazuje kao „Cena uskoro" i ne može da se doda u korpu.
+ * Cena zavisi od pakovanja i čita se iz `product_variants`. Pakovanje bez cene
+ * ili isključeno u adminu se uopšte ne nudi. Dok se cene ne učitaju u browseru,
+ * spisak ponuđenih pakovanja stiže sa servera (`pricedCodes`), pa ništa ne treperi.
  */
 export default function VariantPicker({
   product,
   image,
   isAvailable,
+  pricedCodes,
 }: {
   product: Product;
   image: string;
   isAvailable: boolean;
+  /** Pakovanja koja po serveru imaju cenu; važe dok se cene ne učitaju u browseru. */
+  pricedCodes: string[];
 }) {
   const { addItem } = useCart();
   const { priceMap, productDiscountMap, siteDiscountPercent, inactiveVariants, loaded } =
     usePricingData();
 
-  const [selectedCode, setSelectedCode] = useState(product.variants[0]?.code ?? '');
-  const selected: ProductVariant | undefined =
-    product.variants.find((v) => v.code === selectedCode) ?? product.variants[0];
-
   const keyOf = (v: ProductVariant) => variantKey(product.slug, v.code);
   const priceOf = (v: ProductVariant) => (loaded ? (priceMap.get(keyOf(v)) ?? 0) : 0);
-  const isVariantAvailable = (v: ProductVariant) => !inactiveVariants.has(keyOf(v));
+
+  const visible = product.variants.filter((v) =>
+    loaded ? priceOf(v) > 0 && !inactiveVariants.has(keyOf(v)) : pricedCodes.includes(v.code),
+  );
+
+  const [selectedCode, setSelectedCode] = useState(visible[0]?.code ?? '');
+  const selected: ProductVariant | undefined =
+    visible.find((v) => v.code === selectedCode) ?? visible[0];
+
+  const percentOf = (v: ProductVariant) =>
+    loaded ? effectiveDiscountPercent(keyOf(v), productDiscountMap, siteDiscountPercent) : 0;
+  // Svako pakovanje može imati svoj popust. Oznaka na dugmetu se prikazuje samo
+  // kad se popusti razlikuju; isti popust na sva pakovanja se vidi uz cenu.
+  const percents = visible.map(percentOf);
+  const mixedDiscounts = percents.some((pct) => pct !== percents[0]);
 
   const selectedKey = selected ? keyOf(selected) : '';
   const basePrice = selected ? priceOf(selected) : 0;
-  const percent = loaded
-    ? effectiveDiscountPercent(selectedKey, productDiscountMap, siteDiscountPercent)
-    : 0;
+  const percent = selected ? percentOf(selected) : 0;
   const finalPrice = discountedUnitPriceRsd(basePrice, percent);
 
-  const canBuy = isAvailable && selected !== undefined && basePrice > 0 && isVariantAvailable(selected);
+  const canBuy = isAvailable && selected !== undefined && basePrice > 0;
 
   const add = () => {
     if (!selected || !canBuy) return;
@@ -62,43 +74,48 @@ export default function VariantPicker({
 
   return (
     <div>
-      {product.variants.length > 1 ? (
+      {visible.length > 1 ? (
         <fieldset>
           <legend className="mb-2 font-body text-[11px] uppercase tracking-[0.16em] text-muted">
             Pakovanje
           </legend>
           <div className="flex flex-wrap gap-2">
-            {product.variants.map((v) => {
+            {visible.map((v) => {
               const active = v.code === selected?.code;
-              const disabled = !isVariantAvailable(v);
               return (
                 <button
                   key={v.code}
                   type="button"
                   onClick={() => setSelectedCode(v.code)}
-                  disabled={disabled}
                   aria-pressed={active}
                   className={`rounded-card border px-4 py-2.5 font-body text-[14px] tabular-nums transition-colors ${
                     active
                       ? 'border-ink bg-ink text-canvas'
                       : 'border-line-strong bg-canvas text-ink hover:border-ink'
-                  } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+                  }`}
                 >
                   {v.label}
+                  {mixedDiscounts && percentOf(v) > 0 ? (
+                    <span
+                      className={`ml-2 text-[11px] ${active ? 'text-canvas/80' : 'text-accent'}`}
+                    >
+                      −{Math.round(percentOf(v))}%
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
         </fieldset>
-      ) : (
+      ) : visible.length === 1 && visible[0].label ? (
         <p className="font-body text-[13px] text-muted">
           <span className="uppercase tracking-[0.16em] text-[11px]">Pakovanje</span>
           <span className="px-2">·</span>
-          {product.variants[0]?.label}
+          {visible[0].label}
         </p>
-      )}
+      ) : null}
 
-      <div className="mt-5 flex flex-wrap items-baseline gap-3">
+      <div className={`flex flex-wrap items-baseline gap-3 ${visible.length > 0 ? 'mt-5' : ''}`}>
         {basePrice > 0 ? (
           <>
             <span className="font-body text-[24px] tabular-nums text-ink md:text-[28px]">
@@ -135,9 +152,9 @@ export default function VariantPicker({
             >
               Dodaj u korpu
             </button>
-            {loaded && !canBuy && selected && isVariantAvailable(selected) ? (
+            {loaded && visible.length === 0 ? (
               <p className="mt-2 font-body text-[13px] leading-relaxed text-muted">
-                Cena za ovo pakovanje još nije objavljena. Za upit nas kontaktirajte.
+                Cena za ovaj proizvod još nije objavljena. Za upit nas kontaktirajte.
               </p>
             ) : null}
           </>

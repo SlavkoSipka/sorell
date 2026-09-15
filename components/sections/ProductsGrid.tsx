@@ -2,7 +2,7 @@ import Link from 'next/link';
 import ProductCard from '@/components/ui/ProductCard';
 import ProductCarousel from '@/components/sections/ProductCarousel';
 import ProductsBrowser from '@/components/sections/ProductsBrowser';
-import { products, type Product } from '@/lib/data/products';
+import type { Product } from '@/lib/data/products';
 import {
   getProductOverrides,
   groupByCategory,
@@ -17,11 +17,6 @@ export default async function ProductsGrid({
   showAllLink = false,
   /** true = proizvodi se dele po linijama (Builder Gel, Rubber Base, …). */
   grouped = false,
-  /**
-   * true = samo proizvodi izdvojeni u adminu („Na početnoj").
-   * Dok nijedan nije izdvojen, prikazuje se početak kataloga da sekcija ne bude prazna.
-   */
-  featuredOnly = false,
 }: {
   /** Prazno = sekcija ide bez naslova (stranica iznad već ima svoj). */
   title?: string;
@@ -29,15 +24,11 @@ export default async function ProductsGrid({
   limit?: number;
   showAllLink?: boolean;
   grouped?: boolean;
-  featuredOnly?: boolean;
 }) {
   // Proizvodi isključeni u adminu se ne prikazuju.
   const overrides = await getProductOverrides();
-  const active = products.filter((p) => !overrides.inactiveSlugs.has(p.slug));
-
-  const featured = active.filter((p) => overrides.featuredSlugs.has(p.slug));
-  const source = featuredOnly && featured.length > 0 ? featured : active;
-  const list = limit ? source.slice(0, limit) : source;
+  const active = overrides.catalog.filter((p) => !overrides.inactiveSlugs.has(p.slug));
+  const list = limit ? active.slice(0, limit) : active;
 
   if (list.length === 0) return null;
 

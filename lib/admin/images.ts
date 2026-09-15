@@ -55,6 +55,9 @@ export const TARGET_HEIGHT = 1250;
 /** Fotografija salona stoji u širem okviru (3:2) i na „Uslugama" i na početnoj. */
 export const SALON_RATIO = 3 / 2;
 export const SALON_HEIGHT = 900;
+/** Baner na početnoj je širok (16:9) i ide preko cele širine stranice. */
+export const BANNER_RATIO = 16 / 9;
+export const BANNER_HEIGHT = 900;
 /** Kvalitet WebP-a — 0.82 je granica ispod koje se gubitak vidi na koži i noktima. */
 const WEBP_QUALITY = 0.82;
 

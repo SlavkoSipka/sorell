@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { products as catalog, variantKey } from '@/lib/data/products';
 import type { DbProduct, DbSiteSettings, DbVariant } from '@/lib/price';
 
 export type PricingData = {
@@ -11,9 +10,11 @@ export type PricingData = {
   priceMap: Map<string, number>;
   /** Najniža uneta cena po proizvodu — za „od X RSD". */
   fromPriceMap: Map<string, number>;
+  /** Ključevi aktivnih pakovanja po slug-u proizvoda, iz baze. */
+  variantKeysByProduct: Map<string, string[]>;
   /** Slika uneta iz admina, po slug-u proizvoda. */
   imageMap: Map<string, string>;
-  /** Popust po ključu varijante (nasleđen sa proizvoda). NULL → siteDiscountPercent. */
+  /** Popust po ključu varijante: sa pakovanja, inače sa proizvoda. NULL → siteDiscountPercent. */
   productDiscountMap: Map<string, number | null>;
   /** Varijante isključene u adminu — ne mogu da se izaberu. */
   inactiveVariants: Set<string>;
@@ -26,6 +27,7 @@ const EMPTY: PricingData = {
   products: [],
   priceMap: new Map(),
   fromPriceMap: new Map(),
+  variantKeysByProduct: new Map(),
   imageMap: new Map(),
   productDiscountMap: new Map(),
   inactiveVariants: new Set(),
@@ -68,7 +70,9 @@ export function usePricingData(): PricingData {
         .select('site_discount_percent, bundle_discount_percent')
         .eq('id', 1)
         .maybeSingle(),
-    ]).then(([prodRes, varRes, settRes]) => {
+      // Odvojen upit: bez migracije 0015 padne, a cene i dalje stižu.
+      supabase.from('product_variants').select('variant_slug, discount_percent'),
+    ]).then(([prodRes, varRes, settRes, variantDiscRes]) => {
       if (cancelled) return;
 
       const dbProducts = (prodRes.data ?? []) as DbProduct[];
@@ -93,20 +97,36 @@ export function usePricingData(): PricingData {
         discountByProduct.set(p.slug, p.discount_percent == null ? null : Number(p.discount_percent));
       }
 
-      // Pricing engine radi po ključu linije u korpi, a to je varijanta —
-      // zato se popust sa proizvoda prepisuje na svaku njegovu varijantu.
+      const discountByVariant = new Map<string, number>();
+      const variantDiscountRows = (variantDiscRes.data ?? []) as {
+        variant_slug: string;
+        discount_percent: number | string | null;
+      }[];
+      for (const row of variantDiscountRows) {
+        if (row.discount_percent != null) {
+          discountByVariant.set(row.variant_slug, Number(row.discount_percent));
+        }
+      }
+
+      // Pricing engine radi po ključu linije u korpi, a to je varijanta. Popust
+      // upisan na pakovanje ima prednost; inače važi popust sa proizvoda.
+      // Sve ide iz baze, pa rade i proizvodi napravljeni u adminu.
       const productDiscountMap = new Map<string, number | null>();
       const fromPriceMap = new Map<string, number>();
-      for (const p of catalog) {
-        const discount = discountByProduct.get(p.slug) ?? null;
-        const prices: number[] = [];
-        for (const v of p.variants) {
-          const key = variantKey(p.slug, v.code);
-          productDiscountMap.set(key, discount);
-          const price = priceMap.get(key);
-          if (price !== undefined) prices.push(price);
+      const variantKeysByProduct = new Map<string, string[]>();
+      for (const v of dbVariants) {
+        productDiscountMap.set(
+          v.variant_slug,
+          discountByVariant.get(v.variant_slug) ?? discountByProduct.get(v.product_slug) ?? null,
+        );
+        if (v.is_active === false) continue;
+        const keys = variantKeysByProduct.get(v.product_slug) ?? [];
+        keys.push(v.variant_slug);
+        variantKeysByProduct.set(v.product_slug, keys);
+        const price = priceMap.get(v.variant_slug);
+        if (price !== undefined) {
+          fromPriceMap.set(v.product_slug, Math.min(fromPriceMap.get(v.product_slug) ?? price, price));
         }
-        if (prices.length > 0) fromPriceMap.set(p.slug, Math.min(...prices));
       }
 
       const sett = settRes.data as DbSiteSettings | null;
@@ -116,6 +136,7 @@ export function usePricingData(): PricingData {
         products: dbProducts,
         priceMap,
         fromPriceMap,
+        variantKeysByProduct,
         imageMap,
         productDiscountMap,
         inactiveVariants,
@@ -136,7 +157,7 @@ export function usePricingData(): PricingData {
   return data;
 }
 
-/** Efektivni % popusta za varijantu (override sa proizvoda ili globalni). */
+/** Efektivni % popusta za varijantu (sa pakovanja, sa proizvoda ili globalni). */
 export function effectiveDiscountPercent(
   key: string,
   productDiscountMap: Map<string, number | null>,

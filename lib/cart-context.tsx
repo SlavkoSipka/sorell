@@ -14,7 +14,6 @@ import {
   getBundleMeta,
   getBundleComponentSlugs,
 } from '@/lib/bundles';
-import { VARIANTS } from '@/lib/data/products';
 
 /**
  * Verzija je deo ključa: kad se katalog promeni (npr. prelazak na pakovanja),
@@ -74,7 +73,10 @@ const CartContext = createContext<CartContextValue | null>(null);
 
 const EMPTY_STORED: StoredShape = { items: [], promoCode: null, promoDiscountPercent: null };
 
-/** Odbacuje stavke kojih više nema u katalogu (promenjen asortiman, obrisana varijanta). */
+/**
+ * Odbacuje neispravne stavke. Proizvodi se prave i u adminu, pa katalog iz
+ * koda nije merilo; da li pakovanje još postoji proverava server pri poručivanju.
+ */
 function keepKnownLines(lines: CartLine[]): CartLine[] {
   return lines.filter(
     (l) =>
@@ -82,7 +84,7 @@ function keepKnownLines(lines: CartLine[]): CartLine[] {
       typeof l.slug === 'string' &&
       typeof l.quantity === 'number' &&
       l.quantity > 0 &&
-      (VARIANTS.has(l.slug) || getBundleMeta(l.slug) !== null),
+      (l.slug.includes('--') || getBundleMeta(l.slug) !== null),
   );
 }
 

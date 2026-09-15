@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, useState } from 'react';
+import { Children, useEffect, useState } from 'react';
 
 export type BrowserGroup = { slug: string; label: string; count: number };
 
@@ -20,6 +20,14 @@ export default function ProductsBrowser({
 }) {
   const [active, setActive] = useState<string>(ALL);
   const sections = Children.toArray(children);
+
+  // Link spolja (npr. slajd na početnoj) otvara spisak na jednoj liniji:
+  // /proizvodi?linija=builder-gel
+  useEffect(() => {
+    const linija = new URLSearchParams(window.location.search).get('linija');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (linija && groups.some((g) => g.slug === linija)) setActive(linija);
+  }, [groups]);
 
   const chip = (selected: boolean) =>
     `inline-flex min-h-[44px] shrink-0 snap-start items-center whitespace-nowrap rounded-card border px-4 font-body text-[13px] uppercase tracking-[0.1em] transition-colors ${
