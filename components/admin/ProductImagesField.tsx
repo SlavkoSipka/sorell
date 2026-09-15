@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useRef } from 'react';
 import { IMAGE_INPUT_ACCEPT } from '@/lib/admin/images';
 
@@ -45,8 +46,7 @@ export default function ProductImagesField({
         <div className="flex items-center gap-3">
           <div className="relative aspect-[4/5] w-[84px] shrink-0 overflow-hidden border border-line bg-surface-2">
             {fallbackImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={fallbackImage} alt="" className="h-full w-full object-cover" />
+              <Image src={fallbackImage} alt="" fill sizes="84px" className="object-cover" />
             ) : null}
           </div>
           <p className="font-body text-[13px] leading-relaxed text-muted">
@@ -58,8 +58,13 @@ export default function ProductImagesField({
           {images.map((img, i) => (
             <li key={img.id} className="border border-line bg-canvas p-1.5">
               <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.url} alt="" className="h-full w-full object-cover" />
+                <Image
+                  src={img.url}
+                  alt=""
+                  fill
+                  sizes="(max-width: 640px) 33vw, 160px"
+                  className="object-cover"
+                />
                 {i === 0 ? (
                   <span className="absolute left-0 top-0 bg-ink px-1.5 py-0.5 font-body text-[9px] uppercase tracking-[0.1em] text-canvas">
                     Glavna

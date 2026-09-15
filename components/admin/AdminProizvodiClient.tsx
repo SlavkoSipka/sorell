@@ -997,10 +997,10 @@ export default function AdminProizvodiClient({
         break;
       }
 
-      setProgress(slug, { stage: 'jezgro', ratio: 0, fileName: file.name });
+      setProgress(slug, { stage: 'obrada', ratio: 0, fileName: file.name });
 
-      // Na telefonu ide direktno, na računaru kroz ffmpeg — `prepareVideo`
-      // bira sam i nikad ne ostaje da visi.
+      // Računar smanjuje kroz ffmpeg, telefon kroz MediaRecorder, a original
+      // ide samo ako oba zakažu. `prepareVideo` bira sam i nikad ne visi.
       let result;
       try {
         result = await prepareVideo(file, (stage, ratio) =>

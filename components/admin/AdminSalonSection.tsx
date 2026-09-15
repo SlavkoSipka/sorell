@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useMemo, useRef, useState } from 'react';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
@@ -359,8 +360,7 @@ export default function AdminSalonSection({
       <div className="mt-6 flex flex-col gap-4 border-t border-line pt-5 sm:flex-row sm:items-start">
         <div className="relative aspect-[3/2] w-full max-w-[220px] shrink-0 overflow-hidden border border-line bg-surface-2">
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt="" className="h-full w-full object-cover" />
+            <Image src={image} alt="" fill sizes="220px" className="object-cover" />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center px-3 text-center font-body text-[11px] uppercase tracking-[0.14em] text-muted">
               Nema fotografije

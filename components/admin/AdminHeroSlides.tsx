@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useRef, useState } from 'react';
 import AdminCard from '@/components/admin/AdminCard';
 import LinkPicker, { LINK_ERROR, isSafeLink, type LinkOption } from '@/components/admin/LinkPicker';
@@ -198,11 +199,12 @@ export default function AdminHeroSlides({
           {slides.map((slide, i) => (
             <li key={slide.id} className="flex gap-3 border border-line bg-surface p-2.5 sm:gap-4 sm:p-3">
               <div className="relative aspect-[4/5] w-[88px] shrink-0 overflow-hidden bg-surface-2 sm:w-[120px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   src={slide.image_url}
                   alt=""
-                  className={`h-full w-full object-cover ${slide.is_active ? '' : 'opacity-40'}`}
+                  fill
+                  sizes="120px"
+                  className={`object-cover ${slide.is_active ? '' : 'opacity-40'}`}
                 />
                 <span className="absolute left-0 top-0 bg-ink px-1.5 py-0.5 font-body text-[10px] tabular-nums text-canvas">
                   {i + 1}.

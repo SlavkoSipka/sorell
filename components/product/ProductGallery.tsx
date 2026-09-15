@@ -1,20 +1,31 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Image, { getImageProps } from 'next/image';
 import Media from '@/components/ui/Media';
 import type { ProductVideo } from '@/lib/products-server';
 
 type Slide = { kind: 'slika'; src: string } | { kind: 'video'; src: string; poster: string };
 
 /**
+ * Sličica klipa kroz Next optimizaciju slika (AVIF/WebP u pravoj veličini),
+ * jer `<video poster>` ne prolazi kroz `next/image` sam.
+ */
+function optimizedPoster(src: string): string | undefined {
+  if (!src) return undefined;
+  return getImageProps({ src, alt: '', width: 800, height: 1000 }).props.src;
+}
+
+/**
  * Slike i klipovi jednog proizvoda.
  *
  * Traka se svajpuje prstom (scroll-snap, bez biblioteke) i istovremeno prati
- * sličice ispod — klik na sličicu pomera traku, a svajp osvetli odgovarajuću
+ * sličice ispod: klik na sličicu pomera traku, a svajp osvetli odgovarajuću
  * sličicu. Sa jednom slikom izgleda kao i pre: nema ni sličica ni tačkica.
  *
- * Klip se ne skida dok ga kupac ne pusti (`preload="none"`): video je
- * najskuplja stavka u mesečnom protoku.
+ * Sve slike, i sličice ispod, idu kroz Next optimizaciju, pa kupac skida
+ * AVIF/WebP u veličini ekrana, a ne original. Klip se ne skida dok ga kupac
+ * ne pusti (`preload="none"`): video je najskuplja stavka u mesečnom protoku.
  */
 export default function ProductGallery({
   images,
@@ -33,7 +44,7 @@ export default function ProductGallery({
   const trackRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
 
-  // Koji je kadar na sredini trake — čita se iz pozicije skrola, pa svajp i
+  // Koji je kadar na sredini trake: čita se iz pozicije skrola, pa svajp i
   // klik na sličicu daju isti rezultat bez dodatnog stanja.
   useEffect(() => {
     const track = trackRef.current;
@@ -78,11 +89,11 @@ export default function ProductGallery({
             aria-label={`${i + 1} od ${slides.length}`}
           >
             {slide.kind === 'video' ? (
-              // Klip zadržava svoj odnos stranica — ne seče se u 4:5 kalup.
+              // Klip zadržava svoj odnos stranica; ne seče se u 4:5 kalup.
               <div className="flex justify-center bg-surface-2">
                 <video
                   src={slide.src}
-                  poster={slide.poster || undefined}
+                  poster={optimizedPoster(slide.poster)}
                   controls
                   playsInline
                   preload="none"
@@ -96,7 +107,8 @@ export default function ProductGallery({
                 ratio="4 / 5"
                 label="Slika proizvoda · 1000×1250"
                 priority={i === 0}
-                sizes="(max-width: 768px) 100vw, 50vw"
+                // Na kompu galerija zauzima levu kolonu stranice od 1200 px.
+                sizes="(max-width: 768px) 100vw, 560px"
               />
             )}
           </div>
@@ -105,7 +117,7 @@ export default function ProductGallery({
 
       {slides.length > 1 ? (
         <>
-          {/* Tačkice — jedini znak na telefonu da traka ima još kadrova. */}
+          {/* Tačkice: jedini znak na telefonu da traka ima još kadrova. */}
           <div className="mt-3 flex justify-center gap-1.5 sm:hidden">
             {slides.map((slide, i) => (
               <button
@@ -141,11 +153,12 @@ export default function ProductGallery({
                   <>
                     {slide.poster ? (
                       // `contain` da se u sličici vidi ceo kadar, kao i u samom klipu.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={slide.poster}
                         alt=""
-                        className="h-full w-full bg-surface-2 object-contain"
+                        fill
+                        sizes="(max-width: 640px) 25vw, 110px"
+                        className="bg-surface-2 object-contain"
                       />
                     ) : (
                       <span className="block h-full w-full bg-surface-2" />
@@ -159,8 +172,13 @@ export default function ProductGallery({
                     </span>
                   </>
                 ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={slide.src} alt="" className="h-full w-full object-cover" />
+                  <Image
+                    src={slide.src}
+                    alt=""
+                    fill
+                    sizes="(max-width: 640px) 25vw, 110px"
+                    className="object-cover"
+                  />
                 )}
               </button>
             ))}

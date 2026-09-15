@@ -29,6 +29,8 @@ export default function ProductCard({
           alt={title}
           ratio="4 / 5"
           label={`Slika · ${title}`}
+          // Kartica je u traci 70% ekrana (telefon), pa 46%, pa četiri u redu.
+          sizes="(max-width: 640px) 70vw, (max-width: 768px) 46vw, 300px"
           className="transition-opacity duration-300 group-hover:opacity-90"
         />
 

@@ -254,6 +254,7 @@ export default async function ProductPage({ params }: Params) {
                       ratio="4 / 5"
                       label={`Slika · ${title}`}
                       fit="contain"
+                      sizes="(max-width: 640px) 60vw, (max-width: 768px) 38vw, 300px"
                     />
                     <p className="mt-3 font-display text-[16px] leading-tight text-ink group-hover:underline underline-offset-4">
                       {p.shade || p.name}

@@ -217,7 +217,9 @@ export async function processImage(
     // Browser koji ne ume WebP vrati PNG pod drugim tipom — tada radije JPEG.
     if (webp && webp.type === 'image/webp') return { blob: webp, ext: 'webp' };
 
-    const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.85);
+    // iPhone ovde uvek završi (Safari ne peče WebP). Kupac ionako dobija AVIF
+    // preko Next optimizacije, pa original sme da bude jače sabijen.
+    const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.8);
     if (jpeg) return { blob: jpeg, ext: 'jpg' };
 
     // Poslednja šansa: PNG je veći, ali bolje veliki nego nijedan.

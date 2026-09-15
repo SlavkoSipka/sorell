@@ -7,19 +7,21 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { canvasToBlob, createHiddenVideo, destroyVideo, isMobileDevice, withTimeout } from './media';
 
 /**
- * Video klipovi proizvoda — dva puta do sajta, po uređaju.
+ * Video klipovi proizvoda: svaki se smanjuje pre slanja, na svakom uređaju.
  *
  * Na računaru: ffmpeg.wasm prebaci klip u H.264 MP4, smanji stranicu na
  * najviše 1280 px, ograniči na 30 fps i izbaci zvuk. Od 150 MB tipično
- * ostane 1–3 MB. Traje duže nego obično slanje i to je namerno — Supabase
- * free plan daje 1 GB prostora i 5 GB protoka mesečno.
+ * ostane 1 do 3 MB. Supabase free plan daje 1 GB prostora i 5 GB protoka
+ * mesečno, pa se duže čekanje isplati.
  *
- * Na telefonu: klip ide **direktno**, bez ffmpeg-a. ffmpeg.wasm na
- * iPhone-u traži par stotina megabajta WASM memorije koje Safari nema —
- * kartica se ili sruši ili zauvek stoji na istom procentu. To je bio
- * uzrok zamrzavanja u admin panelu. Direktno slanje je veće, ali radi na
- * svakom telefonu i klip je na sajtu odmah. iPhone pri izboru iz galerije
- * ionako sam prepakuje HEVC u H.264, pa je snimak upotrebljiv na sajtu.
+ * Na telefonu: ffmpeg.wasm traži par stotina megabajta WASM memorije koje
+ * Safari nema (kartica se sruši ili stane), pa se klip smanjuje drugim putem.
+ * Pusti se u skrivenom `<video>`, kadrovi se precrtavaju u manje platno, a
+ * platno snima hardverski H.264 enkoder telefona (MediaRecorder). Traje
+ * koliko i sam snimak, ali radi i na iPhone-u. Od 100 MB ostane par MB.
+ *
+ * Ako nijedan put ne uspe, klip ide kakav jeste: bolje veći fajl na sajtu
+ * nego poruka o grešci.
  */
 
 /** Bucket odvojen od slika — svoj limit i jasna slika potrošnje. */
@@ -47,8 +49,13 @@ export const ACCEPTED_VIDEO_TYPES = [
  */
 export const VIDEO_INPUT_ACCEPT = 'video/*';
 
-/** Gornja granica ulaznog fajla — iznad ovoga slanje sa telefona nema smisla. */
-export const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
+/**
+ * Gornja granica ulaznog fajla. Snimak se pre slanja smanjuje, pa sme da bude
+ * i veliki (4K sa telefona); bez smanjivanja važi limit bucket-a ispod.
+ */
+export const MAX_SOURCE_BYTES = 1024 * 1024 * 1024;
+/** Veći fajl ffmpeg.wasm ne učitava u memoriju; takav klip ide kroz MediaRecorder. */
+const FFMPEG_MAX_INPUT_BYTES = 200 * 1024 * 1024;
 /** Duži klipovi previše troše protok; panel ih odbija sa objašnjenjem. */
 export const MAX_DURATION_SECONDS = 60;
 /** Isti limit koji bucket nameće (migracija 0012) — proveravamo i ovde. */
@@ -70,6 +77,11 @@ const MAX_FPS = 30;
  * dodaj `-c:a aac -b:a 64k -ac 1`.
  */
 const AUDIO_ARGS = ['-an'];
+
+/** Telefon: bitrate snimljenog klipa. 1,2 Mbit/s je oko 9 MB za minut, a rad na noktu se i dalje lepo vidi. */
+const RECORD_BITRATE = 1_200_000;
+/** Koliko sme da stoji reprodukcija dok je stranica vidljiva, pre nego što odustanemo. */
+const STALL_TIMEOUT_MS = 20000;
 
 /** Verzija jezgra se drži fiksno da nova verzija ne promeni ponašanje preko noći. */
 const CORE_VERSION = '0.12.10';
@@ -134,7 +146,7 @@ export async function checkVideo(
   }
   if (file.size > MAX_SOURCE_BYTES) {
     return {
-      reason: `„${file.name}" je veći od ${Math.round(MAX_SOURCE_BYTES / 1024 / 1024)} MB. Skrati klip u telefonu pa pokušaj ponovo.`,
+      reason: `„${file.name}" je veći od 1 GB. Skrati klip u telefonu pa pokušaj ponovo.`,
       meta: null,
     };
   }
@@ -191,7 +203,7 @@ function extensionOf(file: File): string {
   return 'mp4';
 }
 
-export type TranscodeStage = 'jezgro' | 'obrada' | 'poster' | 'slanje';
+export type TranscodeStage = 'jezgro' | 'obrada' | 'telefon' | 'poster' | 'slanje';
 
 export type TranscodeResult = {
   video: Blob;
@@ -362,6 +374,220 @@ export function canTranscodeHere(): boolean {
   return true;
 }
 
+// ── Telefon: MediaRecorder ──────────────────────────────────────
+
+/**
+ * MP4 (H.264) koji browser ume da snimi. Namerno samo MP4: WebM stariji
+ * iPhone ne pušta, pa bi klip na sajtu ostao crn. Bez MP4 klip ide direktno.
+ */
+function pickRecorderMime(): string | null {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return null;
+  }
+  const candidates = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
+  return candidates.find((c) => MediaRecorder.isTypeSupported(c)) ?? null;
+}
+
+let recordSupport: boolean | null = null;
+
+/** Da li ovaj browser ume da smanji klip bez ffmpeg-a (platno + MediaRecorder u MP4). */
+export function canRecordHere(): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  if (recordSupport === null) {
+    const canvas = document.createElement('canvas');
+    recordSupport = typeof canvas.captureStream === 'function' && pickRecorderMime() !== null;
+  }
+  return recordSupport;
+}
+
+/** Kako se klip smanjuje na ovom uređaju; admin po tome ispisuje uputstvo. */
+export function compressionMode(): 'racunar' | 'telefon' | 'bez' {
+  if (canTranscodeHere()) return 'racunar';
+  if (canRecordHere()) return 'telefon';
+  return 'bez';
+}
+
+type WakeLockLike = { release: () => Promise<void> };
+
+/**
+ * Smanjuje klip bez ffmpeg-a: pusti ga u skrivenom `<video>`, precrtava
+ * kadrove u platno od najviše 1280 px i snima platno u MP4. Zvuk se izbacuje,
+ * isto kao na računaru.
+ *
+ * Kad aplikacija ode u pozadinu, i reprodukcija i snimanje se pauziraju, pa u
+ * klipu nema zamrznutog kadra; ekran se za to vreme drži upaljen. Ako se
+ * reprodukcija zaglavi, rezultat nije upotrebljiv ili nije manji od originala,
+ * vraća `null` i klip ide direktno.
+ */
+async function recordVideo(
+  file: File,
+  onProgress?: (stage: TranscodeStage, ratio: number) => void,
+): Promise<PreparedVideo | null> {
+  const mimeType = pickRecorderMime();
+  if (!mimeType) return null;
+
+  onProgress?.('telefon', 0);
+
+  const url = URL.createObjectURL(file);
+  const el = createHiddenVideo();
+  el.preload = 'auto';
+  let stream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
+  let wakeLock: WakeLockLike | null = null;
+  let drawing = false;
+
+  const onVisibility = () => {
+    if (!recorder) return;
+    if (document.hidden) {
+      el.pause();
+      if (recorder.state === 'recording') recorder.pause();
+    } else {
+      if (recorder.state === 'paused') recorder.resume();
+      void el.play().catch(() => {});
+    }
+  };
+
+  try {
+    const loaded = await withTimeout(
+      new Promise<boolean>((resolve, reject) => {
+        el.onloadedmetadata = () => resolve(true);
+        el.onerror = () => reject(new Error('nečitljiv video'));
+        el.src = url;
+        el.load();
+      }),
+      META_TIMEOUT_MS,
+    );
+    if (!loaded || !el.videoWidth || !el.videoHeight) return null;
+
+    const scale = Math.min(1, MAX_EDGE / Math.max(el.videoWidth, el.videoHeight));
+    const canvas = document.createElement('canvas');
+    // H.264 traži parne dimenzije.
+    canvas.width = Math.max(2, Math.round((el.videoWidth * scale) / 2) * 2);
+    canvas.height = Math.max(2, Math.round((el.videoHeight * scale) / 2) * 2);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const duration =
+      Number.isFinite(el.duration) && el.duration > 0
+        ? Math.min(el.duration, MAX_DURATION_SECONDS)
+        : MAX_DURATION_SECONDS;
+
+    stream = canvas.captureStream(MAX_FPS);
+    const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: RECORD_BITRATE });
+    recorder = rec;
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+    const stopped = new Promise<void>((resolve) => {
+      rec.onstop = () => resolve();
+    });
+
+    // Novi kadar se crta čim ga video prikaže; stariji browseri idu preko rAF.
+    const frameVideo = el as unknown as {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+    };
+    drawing = true;
+    const draw = () => {
+      if (!drawing) return;
+      try {
+        ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+      } catch {
+        /* sledeći kadar */
+      }
+      if (typeof frameVideo.requestVideoFrameCallback === 'function') {
+        frameVideo.requestVideoFrameCallback.call(el, draw);
+      } else {
+        requestAnimationFrame(draw);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    try {
+      const lock = (navigator as Navigator & {
+        wakeLock?: { request: (type: 'screen') => Promise<WakeLockLike> };
+      }).wakeLock;
+      wakeLock = lock ? await lock.request('screen') : null;
+    } catch {
+      wakeLock = null;
+    }
+
+    el.currentTime = 0;
+    rec.start(1000);
+    const started = await withTimeout(el.play().then(() => true), 10000);
+    if (!started) return null;
+    draw();
+
+    // Čeka kraj uz stražu: vreme koje stoji dok je stranica vidljiva = zastoj.
+    const finished = await new Promise<boolean>((resolve) => {
+      let last = -1;
+      let lastChange = Date.now();
+      const timer = setInterval(() => {
+        if (document.hidden) {
+          lastChange = Date.now();
+          return;
+        }
+        if (el.paused && !el.ended) void el.play().catch(() => {});
+        if (el.currentTime !== last) {
+          last = el.currentTime;
+          lastChange = Date.now();
+          onProgress?.('telefon', Math.min(1, el.currentTime / duration));
+        }
+        if (el.ended || el.currentTime >= duration - 0.05) {
+          clearInterval(timer);
+          resolve(true);
+        } else if (Date.now() - lastChange > STALL_TIMEOUT_MS) {
+          clearInterval(timer);
+          resolve(false);
+        }
+      }, 250);
+    });
+
+    drawing = false;
+    if (rec.state !== 'inactive') rec.stop();
+    await withTimeout(stopped, 10000);
+    if (!finished || chunks.length === 0) return null;
+
+    const video = new Blob(chunks, { type: 'video/mp4' });
+    // Nije manji od originala: nema smisla, šalje se original.
+    if (video.size === 0 || video.size >= file.size) return null;
+    // Klip koji browser ne ume da otvori ne sme na sajt.
+    if (!(await readVideoMeta(video))) return null;
+    onProgress?.('telefon', 1);
+
+    onProgress?.('poster', 0);
+    const poster = (await posterFrom(video)) ?? (await posterFrom(file));
+    onProgress?.('poster', 1);
+
+    return {
+      video,
+      poster,
+      duration,
+      width: canvas.width,
+      height: canvas.height,
+      contentType: 'video/mp4',
+      ext: 'mp4',
+      transcoded: true,
+    };
+  } catch {
+    return null;
+  } finally {
+    drawing = false;
+    document.removeEventListener('visibilitychange', onVisibility);
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        recorder.stop();
+      } catch {
+        /* svejedno */
+      }
+    }
+    stream?.getTracks().forEach((t) => t.stop());
+    if (wakeLock) void wakeLock.release().catch(() => {});
+    URL.revokeObjectURL(url);
+    destroyVideo(el);
+  }
+}
+
 export type PreparedVideo = TranscodeResult & {
   /** MIME koji ide u bucket — direktan put zadržava original. */
   contentType: string;
@@ -429,22 +655,30 @@ async function prepareDirect(
 }
 
 /**
- * Priprema klip za slanje i bira put sam.
+ * Priprema klip za slanje i bira put sam, redom:
  *
- * Računar ide kroz ffmpeg (mali fajl), telefon direktno (radi uvek).
- * Ako ffmpeg iz bilo kog razloga zakaže, ne odustajemo — klip ide
- * direktno, jer je bolje veći fajl na sajtu nego poruka o grešci.
+ * 1. ffmpeg.wasm na računaru (najmanji fajl);
+ * 2. MediaRecorder, na telefonu i kad ffmpeg zakaže (traje koliko i klip);
+ * 3. original, ako ni jedno ne uspe, jer je bolje veći fajl nego greška.
  */
 export async function prepareVideo(
   file: File,
   onProgress?: (stage: TranscodeStage, ratio: number) => void,
 ): Promise<PreparedVideo | null> {
-  if (canTranscodeHere()) {
+  if (canTranscodeHere() && file.size <= FFMPEG_MAX_INPUT_BYTES) {
     try {
       const result = await transcodeVideo(file, onProgress);
       if (result && result.video.size > 0) {
         return { ...result, contentType: 'video/mp4', ext: 'mp4', transcoded: true };
       }
+    } catch {
+      // Pada na sledeći put ispod.
+    }
+  }
+  if (canRecordHere()) {
+    try {
+      const recorded = await recordVideo(file, onProgress);
+      if (recorded) return recorded;
     } catch {
       // Pada na direktan put ispod.
     }

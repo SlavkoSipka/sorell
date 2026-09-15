@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useRef, useState } from 'react';
 import AdminCard from '@/components/admin/AdminCard';
 import LinkPicker, { LINK_ERROR, isSafeLink, type LinkOption } from '@/components/admin/LinkPicker';
@@ -194,8 +195,13 @@ export default function AdminHomeBanner({
           <p className={LABEL}>Fotografija</p>
           <div className="relative aspect-video w-full overflow-hidden border border-line bg-surface-2">
             {image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt="" className="h-full w-full object-cover" />
+              <Image
+                src={image}
+                alt=""
+                fill
+                sizes="(max-width: 1024px) 100vw, 400px"
+                className="object-cover"
+              />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center px-3 text-center font-body text-[11px] uppercase tracking-[0.14em] text-muted">
                 Nema fotografije

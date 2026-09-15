@@ -20,7 +20,7 @@ export default async function SalonTeaser() {
             alt={salon.title}
             ratio="3 / 2"
             label="Fotografija salona · 1350×900"
-            sizes="(max-width: 768px) 100vw, 50vw"
+            sizes="(max-width: 768px) 100vw, 560px"
           />
         </div>
 

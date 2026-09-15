@@ -1,10 +1,11 @@
 'use client';
 
+import Image from 'next/image';
 import { useRef, useSyncExternalStore } from 'react';
 import {
   VIDEO_INPUT_ACCEPT,
   MAX_DURATION_SECONDS,
-  canTranscodeHere,
+  compressionMode,
   formatBytes,
   formatDuration,
   type TranscodeStage,
@@ -25,6 +26,7 @@ export type VideoProgress = { stage: TranscodeStage; ratio: number; fileName: st
 const STAGE_LABEL: Record<TranscodeStage, string> = {
   jezgro: 'Pripremam obradu (prvi put se skida oko 32 MB)',
   obrada: 'Smanjujem i prepakujem klip',
+  telefon: 'Smanjujem klip · ne zaključavaj telefon i ne izlazi iz stranice',
   poster: 'Hvatam sličicu',
   slanje: 'Šaljem na sajt',
 };
@@ -49,13 +51,13 @@ export default function ProductVideosField({
   onRemove: (id: number) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  // Uputstvo mora da odgovara onome što se stvarno dešava: računar
-  // smanjuje klip, telefon ga šalje kakav jeste. Uređaj se ne zna dok
-  // se ne stigne u browser, pa server render uvek kreće od „bez obrade".
-  const compresses = useSyncExternalStore(
+  // Uputstvo mora da odgovara onome što se stvarno dešava na ovom uređaju.
+  // Uređaj se ne zna dok se ne stigne u browser, pa server render kreće od
+  // opšteg teksta.
+  const mode = useSyncExternalStore(
     () => () => {},
-    () => canTranscodeHere(),
-    () => false,
+    () => compressionMode(),
+    () => 'bez' as const,
   );
 
   const totalBytes = videos.reduce((sum, v) => sum + Number(v.size_bytes ?? 0), 0);
@@ -66,9 +68,11 @@ export default function ProductVideosField({
         Video klipovi ({videos.length})
       </p>
       <p className="mb-2 mt-1 font-body text-[12px] leading-relaxed text-muted">
-        {compresses
-          ? `Okači snimak kakav jeste — sam se smanjuje, prepakuje u MP4 i ostaje bez zvuka. Od 100 MB obično ostane 1–2 MB. Najduže ${MAX_DURATION_SECONDS} s po klipu. Obrada traje koliko i sam snimak, ponekad i duže — ne zatvaraj stranicu dok radi.`
-          : `Okači snimak sa telefona kakav jeste — ide pravo na sajt, bez obrade. Najduže ${MAX_DURATION_SECONDS} s po klipu. Preko mobilnog interneta veći snimak ide par minuta; traka ispod pokazuje dokle je stiglo.`}
+        {mode === 'racunar'
+          ? `Okači snimak kakav jeste. Sam se smanjuje, prepakuje u MP4 i ostaje bez zvuka; od 100 MB obično ostane 1 do 2 MB. Najduže ${MAX_DURATION_SECONDS} s po klipu. Obrada traje koliko i sam snimak, ponekad i duže, pa ne zatvaraj stranicu dok radi.`
+          : mode === 'telefon'
+            ? `Okači snimak kakav jeste. Telefon ga sam smanjuje u MP4 bez zvuka (od 100 MB ostane par MB), a to traje koliko i sam klip. Najduže ${MAX_DURATION_SECONDS} s po klipu. Dok radi, ne zaključavaj telefon i ne izlazi iz stranice.`
+            : `Okači snimak kakav jeste; ovaj browser ne ume da ga smanji, pa ide bez obrade. Najduže ${MAX_DURATION_SECONDS} s po klipu. Traka ispod pokazuje dokle je stiglo slanje.`}
       </p>
 
       {videos.length > 0 ? (
@@ -79,8 +83,13 @@ export default function ProductVideosField({
                 {v.poster_url ? (
                   // `contain` — klip se na sajtu prikazuje ceo, pa neka i ovde
                   // bude jasno šta je u kadru.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={v.poster_url} alt="" className="h-full w-full object-contain" />
+                  <Image
+                    src={v.poster_url}
+                    alt=""
+                    fill
+                    sizes="(max-width: 640px) 33vw, 160px"
+                    className="object-contain"
+                  />
                 ) : null}
                 <span className="absolute inset-0 flex items-center justify-center">
                   <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink/70">

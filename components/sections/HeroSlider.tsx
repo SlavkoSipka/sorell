@@ -73,7 +73,7 @@ export default function HeroSlider({ slides }: { slides: HeroSlide[] }) {
               ratio="4 / 5"
               label="Hero slika · preporuka 1200×1500"
               priority={i === 0}
-              sizes="(max-width: 768px) 100vw, 50vw"
+              sizes="(max-width: 768px) 100vw, 560px"
             />
           );
           return (
