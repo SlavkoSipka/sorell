@@ -29,6 +29,17 @@ export default function ProductsBrowser({
     if (linija && groups.some((g) => g.slug === linija)) setActive(linija);
   }, [groups]);
 
+  // Kad je spisak već otvoren, izbor linije u pretrazi menja samo adresu —
+  // komponenta ostaje montirana, pa gornji efekat ne bi opalio. Zato poruka.
+  useEffect(() => {
+    const naIzbor = (e: Event) => {
+      const linija = (e as CustomEvent<string>).detail;
+      if (linija && groups.some((g) => g.slug === linija)) setActive(linija);
+    };
+    window.addEventListener('sorelle:linija', naIzbor);
+    return () => window.removeEventListener('sorelle:linija', naIzbor);
+  }, [groups]);
+
   const chip = (selected: boolean) =>
     `inline-flex min-h-[44px] shrink-0 snap-start items-center whitespace-nowrap rounded-card border px-4 font-body text-[13px] uppercase tracking-[0.1em] transition-colors ${
       selected

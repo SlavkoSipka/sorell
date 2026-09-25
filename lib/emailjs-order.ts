@@ -2,10 +2,20 @@ import emailjs, { EmailJSResponseStatus } from '@emailjs/nodejs';
 import { formatRsd } from '@/lib/price';
 import { SITE } from '@/lib/site-config';
 
-const publicKey = process.env.EMAILJS_PUBLIC_KEY?.trim() ?? '';
+/**
+ * Javni ključ, servis i šablon nisu tajne — javni ključ je po EmailJS-u
+ * namenjen za pregledač, a ID-jevi ništa ne otvaraju bez njega. Zato stoje
+ * ovde i mejl radi na svakom hostingu bez podešavanja; env ih po potrebi
+ * pregazi (npr. drugi nalog za probu).
+ *
+ * Privatni ključ JESTE tajna i ne sme u kod — repozitorijum je javan.
+ * Čita se samo iz env-a; bez njega slanje radi dok je u EmailJS-u isključeno
+ * „Use Private Key".
+ */
+const publicKey = process.env.EMAILJS_PUBLIC_KEY?.trim() || 'kgriFhtObeYOdyGE9';
 const privateKey = process.env.EMAILJS_PRIVATE_KEY?.trim() ?? '';
-const serviceId = process.env.EMAILJS_SERVICE_ID?.trim() ?? '';
-const orderTemplateId = process.env.EMAILJS_ORDER_TEMPLATE_ID?.trim() ?? '';
+const serviceId = process.env.EMAILJS_SERVICE_ID?.trim() || 'service_qktcm9w';
+const orderTemplateId = process.env.EMAILJS_ORDER_TEMPLATE_ID?.trim() || 'template_q080t3p';
 
 export function isOrderEmailJsConfigured(): boolean {
   return Boolean(publicKey && serviceId && orderTemplateId);
@@ -21,12 +31,18 @@ function escapeHtml(s: string): string {
 
 export type OrderEmailPayload = {
   orderId: string;
+  /** Čitljiv broj za kupca (1001…); prazno kod starih porudžbina. */
+  orderNumber: string;
+  /** Link ka PDF potvrdi — ide u mejl kao dugme/link. */
+  receiptUrl: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
   address: string;
+  addressExtra: string;
   city: string;
+  municipality: string;
   postal: string;
   note: string | null;
   promoCode: string | null;
@@ -67,7 +83,8 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
   }
 
   const {
-    orderId, firstName, lastName, email, phone, address, city, postal, note,
+    orderId, orderNumber, receiptUrl, firstName, lastName, email, phone, address, addressExtra,
+    city, municipality, postal, note,
     promoCode, lineItems, subtotalRsd, shippingRsd, totalRsd,
     discountType, discountPercent, discountAmountRsd,
     promoDiscountPercent, promoDiscountRsd,
@@ -78,7 +95,7 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
     .join('\n');
 
   const line_items_html = [
-    '<table role="presentation" cellpadding="8" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;max-width:480px;font-family:Arial,sans-serif;font-size:14px;color:#171614;">',
+    '<table role="presentation" cellpadding="8" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:14px;color:#171614;">',
     '<thead><tr style="border-bottom:1px solid #D5D1CA;"><th align="left">Proizvod</th><th align="right">Kol.</th><th align="right">Iznos</th></tr></thead><tbody>',
     ...lineItems.map(
       (l) =>
@@ -99,6 +116,14 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
 
   const template_params: Record<string, string> = {
     order_id: orderId,
+    order_number: orderNumber || orderId.slice(0, 8),
+    receipt_url: receiptUrl,
+    // Dugme u mejlu vodi pravo na spisak porudžbina u adminu.
+    admin_orders_url: receiptUrl.replace(/\/api\/porudzbine\/.*$/, '/admin/porudzbine'),
+    // tel: link — na telefonu jedan dodir zove kupca.
+    customer_phone_href: 'tel:' + phone.replace(/[^\d+]/g, ''),
+    municipality,
+    address_extra: addressExtra || '—',
     customer_first_name: firstName,
     customer_last_name: lastName,
     customer_full_name: `${firstName} ${lastName}`.trim(),
@@ -107,7 +132,14 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
     address_line: address,
     city,
     postal_code: postal,
-    full_address: `${address}, ${postal} ${city}`.trim(),
+    full_address: [
+      address,
+      addressExtra,
+      `${postal} ${city}`.trim(),
+      municipality ? `opština ${municipality}` : '',
+    ]
+      .filter(Boolean)
+      .join(', '),
     note: note && note.length > 0 ? note : '—',
     promo_code: promoCode && promoCode.length > 0 ? promoCode : '—',
     line_items_text,

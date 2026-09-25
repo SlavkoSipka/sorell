@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import BrandLogo from '@/components/layout/BrandLogo';
 import AnnouncementTicker from '@/components/layout/AnnouncementTicker';
+import SearchBox from '@/components/layout/SearchBox';
 import { useCart } from '@/lib/cart-context';
 
 const navLinks = [
@@ -14,7 +15,10 @@ const navLinks = [
 ];
 
 function CartButton({ className = '', onBeforeOpen }: { className?: string; onBeforeOpen?: () => void }) {
-  const { itemCount, openCart } = useCart();
+  const { itemCount, openCart, lastAdded } = useCart();
+  // Novi `key` ponovo montira ikonicu, pa CSS animacija krene ispočetka
+  // pri svakom dodavanju — bez tajmera i bez efekata.
+  const animKey = lastAdded?.at ?? 0;
   return (
     <button
       type="button"
@@ -26,6 +30,7 @@ function CartButton({ className = '', onBeforeOpen }: { className?: string; onBe
       aria-label={`Korpa${itemCount > 0 ? `, ${itemCount} stavki` : ''}`}
     >
       <svg
+        key={`ikona-${animKey}`}
         width="21"
         height="21"
         viewBox="0 0 24 24"
@@ -35,12 +40,16 @@ function CartButton({ className = '', onBeforeOpen }: { className?: string; onBe
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden
+        className={animKey ? 'cart-bump' : undefined}
       >
         <path d="M6 9V6a6 6 0 0 1 12 0v3" />
         <path d="M4 9h16l-1.2 12H5.2L4 9z" />
       </svg>
       {itemCount > 0 ? (
-        <span className="absolute -right-2 -top-1.5 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[color:var(--nav-text)] px-[5px] font-body text-[11px] font-medium leading-none text-[color:var(--nav-bg)]">
+        <span
+          key={`broj-${animKey}`}
+          className={`${animKey ? 'cart-badge-pop ' : ''}absolute -right-2 -top-1.5 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[color:var(--nav-text)] px-[5px] font-body text-[11px] font-medium leading-none text-[color:var(--nav-bg)]`}
+        >
           {itemCount > 99 ? '99+' : itemCount}
         </span>
       ) : null}
@@ -92,8 +101,9 @@ export default function Navigation() {
             </div>
 
             {/* Prijava na panel stoji samo u footeru — nije za kupce. */}
-            <div className="flex w-8 shrink-0 items-center justify-end gap-4 md:w-auto md:gap-5">
-              <CartButton />
+            <div className="flex shrink-0 items-center justify-end gap-1 md:gap-3">
+              <SearchBox />
+              <CartButton className="h-9 w-9" />
             </div>
           </div>
         </nav>

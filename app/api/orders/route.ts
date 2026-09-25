@@ -11,6 +11,8 @@ import {
 } from '@/lib/order-validation';
 import { computePricing } from '@/lib/pricing-engine';
 import { shippingForProductsTotalRsd } from '@/lib/shipping';
+import { getSiteUrl } from '@/lib/site-url';
+import { firstCheckoutError, validateCheckout } from '@/lib/checkout-validation';
 import type { DbProduct, DbVariant } from '@/lib/price';
 
 type OrderBody = {
@@ -19,7 +21,9 @@ type OrderBody = {
   email?: string;
   phone?: string;
   address?: string;
+  addressExtra?: string;
   city?: string;
+  municipality?: string;
   postal?: string;
   note?: string;
   promoCode?: string | null;
@@ -44,12 +48,33 @@ export async function POST(request: Request) {
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
   const address = typeof body.address === 'string' ? body.address.trim() : '';
+  const addressExtra = typeof body.addressExtra === 'string' ? body.addressExtra.trim() : '';
   const city = typeof body.city === 'string' ? body.city.trim() : '';
+  const municipality = typeof body.municipality === 'string' ? body.municipality.trim() : '';
   const postal = typeof body.postal === 'string' ? body.postal.trim() : '';
   const note = typeof body.note === 'string' && body.note.trim().length > 0 ? body.note.trim() : null;
 
-  if (!firstName || !lastName || !email || !phone || !address || !city || !postal) {
+  if (!firstName || !lastName || !email || !phone || !address || !city || !municipality || !postal) {
     return NextResponse.json({ error: 'Popunite sva obavezna polja.' }, { status: 400 });
+  }
+
+  // Ista pravila kao u formi (lib/checkout-validation.ts) — server ne veruje pregledaču.
+  const greska = firstCheckoutError(
+    validateCheckout({
+      firstName,
+      lastName,
+      phone,
+      email,
+      address,
+      addressExtra,
+      city,
+      municipality,
+      postal,
+      note: note ?? '',
+    }),
+  );
+  if (greska) {
+    return NextResponse.json({ error: greska }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -218,7 +243,9 @@ export async function POST(request: Request) {
       customer_email: email,
       customer_phone: phone,
       address_line: address,
+      address_extra: addressExtra,
       city,
+      municipality,
       postal_code: postal,
       note,
       line_items: lineItemsJson,
@@ -232,7 +259,7 @@ export async function POST(request: Request) {
       total_rsd: orderTotalRsd,
       status: 'poruceno',
     })
-    .select('id')
+    .select('id, order_number')
     .single();
 
   if (insertErr) {
@@ -241,18 +268,24 @@ export async function POST(request: Request) {
   }
 
   const orderIdStr = String(inserted?.id ?? '');
+  const orderNumber = inserted?.order_number != null ? String(inserted.order_number) : '';
+  const receiptUrl = `${getSiteUrl()}/api/porudzbine/${orderIdStr}/potvrda`;
 
   // Mejl ide posle odgovora — porudžbina je već sačuvana.
   after(async () => {
     try {
       await sendOrderNotificationEmail({
         orderId: orderIdStr,
+        orderNumber,
+        receiptUrl,
         firstName,
         lastName,
         email,
         phone,
         address,
+        addressExtra,
         city,
+        municipality,
         postal,
         note,
         promoCode: promoCodeStored,
@@ -275,5 +308,6 @@ export async function POST(request: Request) {
     }
   });
 
-  return NextResponse.json({ ok: true, orderId: inserted?.id });
+  return NextResponse.json({ ok: true, orderId: inserted?.id, orderNumber });
 }
+

@@ -45,6 +45,8 @@ export type AdminProductRow = {
   is_featured: boolean;
   /** NULL = proizvod nije razvrstan ni u jednu kategoriju. */
   category_slug: string | null;
+  /** Redosled na sajtu; manji broj ide prvi. */
+  sort_order: number | null;
   shade: string | null;
   features: string[] | null;
   how_to_use: string | null;
@@ -144,6 +146,8 @@ const BTN_PRIMARY =
 const BTN_QUIET =
   'inline-flex min-h-[40px] items-center justify-center rounded-card border border-line px-3 font-body text-[12px] text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-40';
 const CHECKBOX = 'h-[18px] w-[18px] shrink-0 accent-current';
+const BTN_ARROW =
+  'inline-flex h-10 w-10 items-center justify-center rounded-card border border-line-strong bg-canvas font-body text-[16px] text-ink transition-colors hover:border-ink hover:bg-ink hover:text-canvas disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-line-strong disabled:hover:bg-canvas disabled:hover:text-ink';
 /**
  * „Uredi proizvod" je najvažnija radnja u spisku — crno, visoko i preko cele
  * širine kartice, da se na telefonu ne traži.
@@ -300,6 +304,30 @@ export default function AdminProizvodiClient({
 
   const categoryOf = (slug: string) =>
     products.find((p) => p.slug === slug)?.category_slug ?? UNASSIGNED;
+
+  /** Kojoj grupi proizvod pripada u spisku — kategorija koje nema je „bez kategorije". */
+  const grupaKljuc = (p: AdminProductRow) =>
+    p.category_slug && categories.some((c) => c.slug === p.category_slug)
+      ? p.category_slug
+      : UNASSIGNED;
+
+  /**
+   * Svi proizvodi po grupama, redom kojim stoje na sajtu — bez obzira na
+   * pretragu i filtere. Strelice se oslanjaju na ovaj, pun spisak.
+   */
+  const punaGrupa = useMemo(() => {
+    const map = new Map<string, AdminProductRow[]>();
+    for (const p of products) {
+      const key =
+        p.category_slug && categories.some((c) => c.slug === p.category_slug)
+          ? p.category_slug
+          : UNASSIGNED;
+      const list = map.get(key) ?? [];
+      list.push(p);
+      map.set(key, list);
+    }
+    return map;
+  }, [products, categories]);
 
   const categoryName = (key: string) =>
     key === UNASSIGNED ? 'Bez kategorije' : (categories.find((c) => c.slug === key)?.name ?? key);
@@ -803,6 +831,61 @@ export default function AdminProizvodiClient({
     }
     setCatBusy(false);
     invalidatePricingCache();
+  };
+
+  /**
+   * Pomera proizvod za jedno mesto unutar njegove kategorije.
+   *
+   * Grupa zadržava ista mesta u globalnom redosledu (`products.sort_order`),
+   * samo se među njima preraspodele — zato se u bazu piše po pravilu samo
+   * dva reda. Sajt čita isti `sort_order`, pa se promena vidi za najviše
+   * 30 sekundi, koliko traje keš kataloga.
+   */
+  const moveProduct = async (slug: string, direction: -1 | 1) => {
+    const proizvod = products.find((p) => p.slug === slug);
+    if (!proizvod) return;
+    const grupa = punaGrupa.get(grupaKljuc(proizvod)) ?? [];
+    const i = grupa.findIndex((p) => p.slug === slug);
+    const j = i + direction;
+    if (i === -1 || j < 0 || j >= grupa.length) return;
+
+    const preuredjena = [...grupa];
+    [preuredjena[i], preuredjena[j]] = [preuredjena[j], preuredjena[i]];
+
+    // Mesta koja grupa već zauzima, po veličini — dodeljuju se novom redosledu.
+    // Ovako radi i kad su vrednosti jednake ili prazne, a ne samo kad su različite.
+    const mesta = grupa
+      .map((p, idx) => p.sort_order ?? idx + 1)
+      .slice()
+      .sort((a, b) => a - b);
+
+    const izmene = preuredjena
+      .map((p, idx) => ({ slug: p.slug, sort_order: mesta[idx] }))
+      .filter((x) => grupa.find((p) => p.slug === x.slug)?.sort_order !== x.sort_order);
+
+    if (izmene.length === 0) return;
+
+    const novi = new Map(izmene.map((x) => [x.slug, x.sort_order]));
+    setProducts((prev) =>
+      [...prev]
+        .map((p) => (novi.has(p.slug) ? { ...p, sort_order: novi.get(p.slug) ?? null } : p))
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    );
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    setNotice(null);
+    for (const x of izmene) {
+      const { error } = await supabase
+        .from('products')
+        .update({ sort_order: x.sort_order })
+        .eq('slug', x.slug);
+      if (error) {
+        setNotice('Redosled proizvoda nije sačuvan. Osveži stranicu.');
+        return;
+      }
+    }
   };
 
   const toggleCategoryActive = async (slug: string, next: boolean) => {
@@ -1498,18 +1581,64 @@ export default function AdminProizvodiClient({
                         s.discount.trim() === '' ? siteDiscountPercent : (parsePct(s.discount) ?? 0);
                       const lineSize = products.filter((x) => categoryOf(x.slug) === group.key).length;
                       const editing = openEditors.has(p.slug);
+                      const celaGrupa = punaGrupa.get(group.key) ?? [];
+                      const mesto = celaGrupa.findIndex((x) => x.slug === p.slug);
+                      const ukupno = celaGrupa.length;
+                      // Dok je uključena pretraga ili filter, deo grupe je sakriven —
+                      // pomeranje bi „preskakalo" proizvode koji se ne vide.
+                      const zakljucano = forceOpen;
 
                       return (
                         <div key={p.slug} className="border border-line bg-surface p-3 md:p-5">
-                          {/* Naziv uvek zauzima dva reda, pa su kartice iste visine
-                              i spisak se čita kao tabela i na telefonu. */}
-                          <p className="line-clamp-2 min-h-[2.8em] font-body text-[16px] leading-[1.4] text-ink">
-                            {s.name.trim() || p.name}
-                            {s.shade.trim() ? (
-                              <span className="text-muted"> — {s.shade.trim()}</span>
+                          <div className="flex items-start gap-3">
+                            <div className="min-w-0 flex-1">
+                              {/* Naziv uvek zauzima dva reda, pa su kartice iste visine
+                                  i spisak se čita kao tabela i na telefonu. */}
+                              <p className="line-clamp-2 min-h-[2.8em] font-body text-[16px] leading-[1.4] text-ink">
+                                {s.name.trim() || p.name}
+                                {s.shade.trim() ? (
+                                  <span className="text-muted"> — {s.shade.trim()}</span>
+                                ) : null}
+                              </p>
+                              <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{p.slug}</p>
+                            </div>
+
+                            {/* Redosled unutar kategorije — isti se vidi na sajtu. */}
+                            {mesto !== -1 && ukupno > 1 ? (
+                              <div
+                                role="group"
+                                aria-label="Redosled u kategoriji"
+                                className="flex shrink-0 items-center gap-1.5"
+                                title={
+                                  zakljucano
+                                    ? 'Isključi pretragu i filter da bi menjala redosled.'
+                                    : undefined
+                                }
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => void moveProduct(p.slug, -1)}
+                                  disabled={zakljucano || mesto === 0}
+                                  aria-label={`Pomeri „${s.name.trim() || p.name}" naviše`}
+                                  className={BTN_ARROW}
+                                >
+                                  ↑
+                                </button>
+                                <span className="min-w-[38px] text-center font-body text-[12px] tabular-nums text-muted">
+                                  {mesto + 1}/{ukupno}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => void moveProduct(p.slug, 1)}
+                                  disabled={zakljucano || mesto === ukupno - 1}
+                                  aria-label={`Pomeri „${s.name.trim() || p.name}" naniže`}
+                                  className={BTN_ARROW}
+                                >
+                                  ↓
+                                </button>
+                              </div>
                             ) : null}
-                          </p>
-                          <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{p.slug}</p>
+                          </div>
 
                           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
                             <label className="inline-flex min-h-[40px] items-center gap-2 font-body text-[13px] text-ink-soft">

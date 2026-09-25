@@ -26,12 +26,16 @@ export type LineItem = {
 
 export type AdminOrderRow = {
   id: string;
+  /** Redni broj za kupca (1001…); null samo kod porudžbina pre migracije 0017. */
+  order_number?: number | string | null;
   customer_first_name: string;
   customer_last_name: string;
   customer_email: string;
   customer_phone: string;
   address_line: string;
+  address_extra?: string | null;
   city: string;
+  municipality?: string | null;
   postal_code: string;
   note: string | null;
   admin_notes?: string | null;
@@ -63,11 +67,34 @@ function productsTotalRsd(o: AdminOrderRow): number {
   return total - shipping;
 }
 
+/** Link ka PDF potvrdi — ista koju je kupac dobio. */
+function potvrdaHref(o: AdminOrderRow): string {
+  return `/api/porudzbine/${o.id}/potvrda`;
+}
+
+function brojPorudzbine(o: AdminOrderRow): string {
+  return o.order_number != null && o.order_number !== '' ? String(o.order_number) : '—';
+}
+
 function OrderDetails({ o }: { o: AdminOrderRow }) {
   return (
     <div className="space-y-2 font-body text-[13px] text-muted">
+      <p className="text-ink">
+        {o.address_line}
+        {o.address_extra ? `, ${o.address_extra}` : ''}
+        <br />
+        {o.postal_code} {o.city}
+        {o.municipality ? ` · opština ${o.municipality}` : ''}
+      </p>
       <p>
-        {o.address_line}, {o.postal_code} {o.city}
+        <a
+          href={potvrdaHref(o)}
+          target="_blank"
+          rel="noopener"
+          className="inline-flex min-h-[36px] items-center gap-1.5 text-ink underline underline-offset-2"
+        >
+          PDF potvrda porudžbine br. {brojPorudzbine(o)}
+        </a>
       </p>
       {o.note ? <p>Napomena kupca: {o.note}</p> : null}
 
@@ -464,6 +491,9 @@ export default function AdminPorudzbineClient({
           <div key={o.id} className="space-y-3 border border-line bg-canvas p-4 font-body text-[14px]">
             <div className="flex items-start justify-between gap-2">
               <div>
+                <p className="text-[12px] font-semibold tabular-nums text-ink">
+                  Br. {brojPorudzbine(o)}
+                </p>
                 <p className="text-ink">
                   {o.customer_first_name} {o.customer_last_name}
                 </p>
@@ -515,7 +545,7 @@ export default function AdminPorudzbineClient({
         <table className="w-full min-w-[1100px] text-left font-body text-[12px]">
           <thead>
             <tr className="border-b border-line bg-surface">
-              {['Datum', 'Kupac', 'Kontakt', 'Iznos', 'Promo', 'Status', 'Detalji', 'Beleške'].map((h) => (
+              {['Br.', 'Datum', 'Kupac', 'Kontakt', 'Iznos', 'Promo', 'Status', 'Detalji', 'Beleške'].map((h) => (
                 <th
                   key={h}
                   className="px-3 py-3 font-normal text-[10px] uppercase tracking-[0.1em] text-muted"
@@ -528,6 +558,17 @@ export default function AdminPorudzbineClient({
           <tbody>
             {filteredOrders.map((o) => (
               <tr key={o.id} className="border-b border-line align-top">
+                <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-ink">
+                  <a
+                    href={potvrdaHref(o)}
+                    target="_blank"
+                    rel="noopener"
+                    className="underline underline-offset-2"
+                    title="Otvori PDF potvrdu"
+                  >
+                    {brojPorudzbine(o)}
+                  </a>
+                </td>
                 <td className="whitespace-nowrap px-3 py-3 tabular-nums text-muted">
                   {new Date(o.created_at).toLocaleString('sr-RS', {
                     dateStyle: 'short',

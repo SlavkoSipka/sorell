@@ -24,7 +24,7 @@ export default async function AdminProizvodiPage() {
     supabase
       .from('products')
       .select(
-        'slug, name, image_path, volume, discount_percent, is_active, is_featured, category_slug, shade, features, how_to_use, formulation, eu_compliance, instagram_url',
+        'slug, name, image_path, volume, discount_percent, is_active, is_featured, category_slug, shade, features, how_to_use, formulation, eu_compliance, instagram_url, sort_order',
       )
       .order('sort_order', { ascending: true })
       .order('id', { ascending: true }),

@@ -4,17 +4,21 @@ import Hero from '@/components/sections/Hero';
 import HomeBanner from '@/components/sections/HomeBanner';
 import BundlesSection from '@/components/sections/BundlesSection';
 import SalonTeaser from '@/components/sections/SalonTeaser';
-import { SITE } from '@/lib/site-config';
+import { SEO_DEFAULT_DESCRIPTION, SEO_DEFAULT_TITLE, jsonLd } from '@/lib/seo';
+import { getBusinessJsonLd } from '@/lib/seo-server';
 
 export const metadata: Metadata = {
-  title: { absolute: `${SITE.brandName} — ${SITE.tagline}` },
-  description: SITE.description,
+  title: { absolute: SEO_DEFAULT_TITLE },
+  description: SEO_DEFAULT_DESCRIPTION,
   alternates: { canonical: '/' },
 };
 
-export default function Home() {
+export default async function Home() {
+  const salon = await getBusinessJsonLd();
+
   return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(salon) }} />
       <ScrollRevealInit />
       <Hero />
       <HomeBanner />

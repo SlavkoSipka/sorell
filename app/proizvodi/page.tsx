@@ -4,9 +4,15 @@ import ProductsGrid from '@/components/sections/ProductsGrid';
 import BundlesSection from '@/components/sections/BundlesSection';
 
 export const metadata: Metadata = {
-  title: 'Proizvodi',
+  title: 'Gel za nokte, builder gel i top gel',
   description:
-    'Profesionalni gradivni gelovi, rubber base i završni sjajevi. HEMA Free • Di-HEMA Free • TPO Free.',
+    'Sorelle proizvodi za manikir: builder gel, rubber base, top gel i završni sjaj, uz opremu i materijal za manikir. HEMA Free formule, plaćanje pouzećem.',
+  openGraph: {
+    title: 'Gel za nokte, builder gel i top gel | Sorelle',
+    description:
+      'Builder gel, rubber base, top gel i završni sjaj — profesionalni materijal za manikir. HEMA Free formule.',
+    url: '/proizvodi',
+  },
   alternates: { canonical: '/proizvodi' },
 };
 

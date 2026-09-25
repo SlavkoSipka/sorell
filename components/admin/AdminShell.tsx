@@ -65,6 +65,12 @@ const SECTIONS: { title: string; tabs: Tab[] }[] = [
         hint: 'Traka i meni na vrhu',
         icon: 'M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-2 2-2H17a4 4 0 004-4c0-4.4-4-8-9-8zM7.5 11.5h.01M10 7.5h.01M15 7.5h.01',
       },
+      {
+        href: '/admin/pravno',
+        label: 'Pravni tekstovi',
+        hint: 'Privatnost i uslovi',
+        icon: 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5',
+      },
     ],
   },
 ];

@@ -1,0 +1,118 @@
+<!--
+  EmailJS šablon: obaveštenje salonu o novoj porudžbini.
+  Kopira se u EmailJS → Email Templates → template_q080t3p → Content (Edit Content → Code editor).
+  Promenljive puni lib/emailjs-order.ts. Trostruke vitičaste zagrade oko line_items_html = HTML tabela se ubacuje kakva jeste.
+-->
+<div style="margin:0;padding:0;background:#f3f1ed;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f1ed;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border:1px solid #e7e4df;">
+
+          <!-- Zaglavlje -->
+          <tr>
+            <td style="padding:28px 32px 20px 32px;border-bottom:1px solid #e7e4df;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-family:Georgia,'Times New Roman',serif;font-size:24px;letter-spacing:2px;color:#171614;">SORELLE</td>
+                  <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#6e6a63;">Nova porudžbina</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Broj i iznos -->
+          <tr>
+            <td style="padding:28px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0;font-size:13px;color:#6e6a63;">{{order_date}}</p>
+              <p style="margin:6px 0 0 0;font-size:26px;font-weight:bold;color:#171614;">Porudžbina br. {{order_number}}</p>
+              <p style="margin:10px 0 0 0;font-size:15px;color:#4b4843;">
+                Za naplatu pouzećem: <strong style="color:#171614;font-size:18px;">{{total_rsd}}</strong>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Dugmad -->
+          <tr>
+            <td style="padding:20px 32px 8px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background:#171614;">
+                    <a href="{{receipt_url}}" target="_blank" style="display:inline-block;padding:13px 22px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#ffffff;text-decoration:none;">PDF potvrda</a>
+                  </td>
+                  <td style="width:10px;"></td>
+                  <td style="border:1px solid #171614;">
+                    <a href="{{admin_orders_url}}" target="_blank" style="display:inline-block;padding:12px 20px;font-family:Arial,Helvetica,sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#171614;text-decoration:none;">Otvori u adminu</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Kupac i adresa -->
+          <tr>
+            <td style="padding:24px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0 0 10px 0;font-size:11px;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;color:#6e6a63;">Kupac i adresa za dostavu</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#faf9f7;border:1px solid #e7e4df;">
+                <tr>
+                  <td style="padding:16px 18px;font-size:15px;line-height:23px;color:#171614;">
+                    <strong>{{customer_full_name}}</strong><br>
+                    {{address_line}}<br>
+                    {{address_extra}}<br>
+                    {{postal_code}} {{city}}<br>
+                    Opština: {{municipality}}<br>
+                    <span style="display:inline-block;margin-top:8px;">
+                      Tel: <a href="{{customer_phone_href}}" style="color:#171614;font-weight:bold;">{{customer_phone}}</a><br>
+                      Email: <a href="mailto:{{customer_email}}" style="color:#171614;">{{customer_email}}</a>
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Stavke -->
+          <tr>
+            <td style="padding:24px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0 0 10px 0;font-size:11px;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;color:#6e6a63;">Proizvodi</p>
+              {{{line_items_html}}}
+            </td>
+          </tr>
+
+          <!-- Iznosi -->
+          <tr>
+            <td style="padding:12px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;color:#4b4843;">
+                <tr><td style="padding:4px 0;">Međuzbir</td><td align="right" style="padding:4px 0;color:#171614;">{{subtotal_rsd}}</td></tr>
+                <tr><td style="padding:4px 0;">Popust</td><td align="right" style="padding:4px 0;color:#171614;">{{discount_line}}</td></tr>
+                <tr><td style="padding:4px 0;">Promo kod</td><td align="right" style="padding:4px 0;color:#171614;">{{promo_line}}</td></tr>
+                <tr><td style="padding:4px 0;">Poštarina</td><td align="right" style="padding:4px 0;color:#171614;">{{shipping_rsd}}</td></tr>
+                <tr>
+                  <td style="padding:12px 0 4px 0;border-top:1px solid #171614;font-weight:bold;color:#171614;">ZA NAPLATU POUZEĆEM</td>
+                  <td align="right" style="padding:12px 0 4px 0;border-top:1px solid #171614;font-size:18px;font-weight:bold;color:#171614;">{{total_rsd}}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Napomena -->
+          <tr>
+            <td style="padding:20px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0 0 8px 0;font-size:11px;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;color:#6e6a63;">Napomena kupca</p>
+              <p style="margin:0;font-size:14px;line-height:21px;color:#171614;">{{note}}</p>
+            </td>
+          </tr>
+
+          <!-- Podnožje -->
+          <tr>
+            <td style="padding:28px 32px 28px 32px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#6e6a63;">
+              Plaćanje pouzećem — kupac plaća kuriru pri preuzimanju. Odgovor na ovaj mejl ide direktno kupcu.<br>
+              Poslato automatski sa sajta {{site_name}}.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>

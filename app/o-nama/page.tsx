@@ -6,7 +6,7 @@ import { SITE } from '@/lib/site-config';
 
 export const metadata: Metadata = {
   title: 'O nama',
-  description: `Priča brenda ${SITE.brandName}.`,
+  description: `${SITE.brandName} — profesionalna kozmetika za nokte: gel za nokte, builder gel, rubber base i završni sjaj za manikir. Priča brenda i salona.`,
   alternates: { canonical: '/o-nama' },
 };
 

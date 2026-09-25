@@ -26,6 +26,11 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['@supabase/supabase-js'],
   },
+  // PDF potvrda čita font sa diska (fs), pa ga Next ne bi sam spakovao u
+  // serverless funkciju — bez ovoga na Vercelu PDF pada, a lokalno radi.
+  outputFileTracingIncludes: {
+    '/api/porudzbine/**': ['./assets/fonts/**/*'],
+  },
 };
 
 export default nextConfig;

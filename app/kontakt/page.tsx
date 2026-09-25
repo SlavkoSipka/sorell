@@ -4,19 +4,28 @@ import Media from '@/components/ui/Media';
 import { SITE } from '@/lib/site-config';
 import { telHref } from '@/lib/order-status';
 import { getSalonData } from '@/lib/salon-server';
+import { jsonLd } from '@/lib/seo';
+import { getBusinessJsonLd } from '@/lib/seo-server';
 
-export const metadata: Metadata = {
-  title: 'Kontakt',
-  description: 'Adresa, radno vreme i kontakt salona.',
-  alternates: { canonical: '/kontakt' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { address, city, phone } = await getSalonData();
+  return {
+    title: 'Kontakt i lokacija',
+    description: `Sorelle salon — ${address}, ${city}. Telefon ${phone}. Radno vreme, mapa i kontakt za salon i porudžbine.`,
+    alternates: { canonical: '/kontakt' },
+  };
+}
 
 export default async function KontaktPage() {
   // Telefon se menja iz admina (kartica Salon), isto kao na „Uslugama".
-  const { phone, address, city, title } = await getSalonData();
+  const [{ phone, address, city, title }, salonLd] = await Promise.all([
+    getSalonData(),
+    getBusinessJsonLd(),
+  ]);
 
   return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(salonLd) }} />
       <ScrollRevealInit />
 
       <section className="border-b border-line">

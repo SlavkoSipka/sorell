@@ -17,6 +17,11 @@ import {
   resolveVideos,
 } from '@/lib/products-server';
 
+import { SITE } from '@/lib/site-config';
+import { getSiteUrl } from '@/lib/site-url';
+import { jsonLd, metaDescription } from '@/lib/seo';
+import { getProductOffer } from '@/lib/seo-server';
+
 type Params = { params: Promise<{ slug: string }> };
 
 export async function generateStaticParams() {
@@ -32,13 +37,31 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const product = mergeProduct(found, overrides);
 
   const title = product.shade ? `${product.name} — ${product.shade}` : product.name;
-  const description = product.features[0];
+  const linija =
+    overrides.categories.find((c) => c.slug === categorySlugOf(product.slug, overrides))?.label ??
+    product.category;
+  // Linija + prva osobina + poziv na kupovinu — tekst ostaje onaj iz admina,
+  // ovde se samo slaže u rečenicu koju Google prikazuje ispod naslova.
+  const description = metaDescription(
+    [linija, product.features[0], 'Poruči online, plaćanje pouzećem, dostava širom Srbije.']
+      .filter(Boolean)
+      .join('. ')
+      .replace(/\.\./g, '.'),
+  );
+  const slika = resolveImages(product.slug, overrides)[0] || resolveImage(product.slug, overrides);
 
   return {
     title,
     description,
     alternates: { canonical: `/proizvodi/${product.slug}` },
-    openGraph: { title, description, url: `/proizvodi/${product.slug}` },
+    openGraph: {
+      type: 'website',
+      title: `${title} | ${SITE.brandName}`,
+      description,
+      url: `/proizvodi/${product.slug}`,
+      ...(slika ? { images: [{ url: slika, alt: title }] } : {}),
+    },
+    twitter: { card: 'summary_large_image', title, description, ...(slika ? { images: [slika] } : {}) },
   };
 }
 
@@ -63,6 +86,61 @@ export default async function ProductPage({ params }: Params) {
   const categoryLabel =
     overrides.categories.find((c) => c.slug === categorySlug)?.label ?? product.category;
 
+  // Podaci za Google: cena (posle popusta, isto kao na stranici), dostupnost i
+  // putanja kategorija — iz toga pravi bogat rezultat sa cenom.
+  const base = getSiteUrl();
+  const url = `${base}/proizvodi/${product.slug}`;
+  const offer = await getProductOffer(product.slug);
+  const naziv = product.shade ? `${product.name} — ${product.shade}` : product.name;
+  const apsolutno = (src: string) => (src.startsWith('http') ? src : `${base}${src}`);
+  const strukturisano = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: naziv,
+      url,
+      sku: product.slug,
+      brand: { '@type': 'Brand', name: SITE.brandName },
+      category: categoryLabel,
+      description: [...product.features, product.howToUse]
+        .map((t) => t?.trim())
+        .filter(Boolean)
+        .map((t) => (/[.!?]$/.test(t!) ? t : `${t}.`))
+        .join(' '),
+      ...(images.length > 0 ? { image: images.filter(Boolean).map(apsolutno) } : {}),
+      ...(offer
+        ? {
+            offers: {
+              '@type': 'AggregateOffer',
+              priceCurrency: 'RSD',
+              lowPrice: offer.low.toFixed(2),
+              highPrice: offer.high.toFixed(2),
+              offerCount: offer.count,
+              availability: isAvailable
+                ? 'https://schema.org/InStock'
+                : 'https://schema.org/OutOfStock',
+              url,
+              seller: { '@id': `${base}/#salon` },
+            },
+          }
+        : {}),
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Proizvodi', item: `${base}/proizvodi` },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: categoryLabel,
+          item: `${base}/proizvodi?linija=${categorySlug}`,
+        },
+        { '@type': 'ListItem', position: 3, name: naziv, item: url },
+      ],
+    },
+  ];
+
   // Ostale nijanse iste linije — najkorisniji „dalje" izbor u okviru kataloga.
   const sameLine = overrides.catalog.filter(
     (p) =>
@@ -82,6 +160,7 @@ export default async function ProductPage({ params }: Params) {
 
   return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(strukturisano) }} />
       <ScrollRevealInit />
 
       <div className="mx-auto max-w-[1200px] px-5 py-8 md:px-8 md:py-12">

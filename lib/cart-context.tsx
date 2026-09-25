@@ -50,9 +50,20 @@ type StoredShape = {
   promoDiscountPercent: number | null;
 };
 
+/** Poslednje dodato — za kratko obaveštenje i animaciju ikonice korpe. */
+export type AddedNotice = {
+  name: string;
+  image: string;
+  /** Vreme dodavanja; svaka nova vrednost ponovo pokreće animaciju. */
+  at: number;
+};
+
 type CartContextValue = {
   items: CartLine[];
   itemCount: number;
+  /** null = nema aktivnog obaveštenja. */
+  lastAdded: AddedNotice | null;
+  dismissAdded: () => void;
   isOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
@@ -118,6 +129,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [promoDiscountPercent, setPromoDiscountPercentState] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [lastAdded, setLastAdded] = useState<AddedNotice | null>(null);
+  const dismissAdded = useCallback(() => setLastAdded(null), []);
 
   // Jednokratno čitanje korpe iz localStorage-a posle hidratacije (na serveru ga nema).
   useEffect(() => {
@@ -160,7 +173,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
       return [...prev, { ...p, quantity: 1 }];
     });
-    setIsOpen(true);
+    // Korpa se namerno ne otvara: kupac ostaje na stranici i nastavlja da
+    // bira, a ikonica korpe i kratko obaveštenje pokažu da je dodato.
+    setLastAdded({ name: p.name, image: p.image ?? '', at: Date.now() });
   }, []);
 
   const addBundle = useCallback((bundleId: string) => {
@@ -191,7 +206,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         },
       ];
     });
-    setIsOpen(true);
+    setLastAdded({ name: meta.name, image: meta.image ?? '', at: Date.now() });
   }, []);
 
   const removeLine = useCallback((slug: string) => {
@@ -226,12 +241,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      items, itemCount, isOpen, openCart, closeCart, toggleCart,
+      items, itemCount, lastAdded, dismissAdded, isOpen, openCart, closeCart, toggleCart,
       addItem, addBundle, removeLine, setQuantity, clearCart,
       setPromo, clearPromo, promoCode, promoDiscountPercent,
     }),
     [
-      items, itemCount, isOpen, openCart, closeCart, toggleCart,
+      items, itemCount, lastAdded, dismissAdded, isOpen, openCart, closeCart, toggleCart,
       addItem, addBundle, removeLine, setQuantity, clearCart,
       setPromo, clearPromo, promoCode, promoDiscountPercent,
     ],

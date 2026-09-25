@@ -38,6 +38,8 @@
   --ticker-border: color-mix(in srgb, var(--ticker-text) 18%, var(--ticker-bg));
   --nav-text-soft: color-mix(in srgb, var(--nav-text) 68%, var(--nav-bg));
   --nav-overlay: color-mix(in srgb, var(--nav-text) 20%, transparent);
+  /* Red pretrage pod mišem/strelicom — blaga senka u boji navigacije. */
+  --nav-hover: color-mix(in srgb, var(--nav-text) 8%, transparent);
 }
 
 html {
@@ -124,6 +126,36 @@ h1, h2, h3, h4, h5, h6 {
   .announcement-marquee-duplicate { display: none; }
 }
 
+/* ── Korpa: potvrda da je proizvod dodat ── */
+@keyframes cart-bump {
+  0% { transform: scale(1); }
+  28% { transform: scale(1.28) rotate(-9deg); }
+  52% { transform: scale(0.92) rotate(5deg); }
+  76% { transform: scale(1.06) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes cart-badge-pop {
+  0% { transform: scale(0.3); }
+  60% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cart-bump { animation: cart-bump 700ms cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+.cart-badge-pop { animation: cart-badge-pop 520ms cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+.toast-in { animation: toast-in 260ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cart-bump,
+  .cart-badge-pop,
+  .toast-in { animation: none; }
+}
+
 /* ── Podvučeni link ── */
 .link-underline {
   position: relative;
@@ -170,6 +202,13 @@ h1, h2, h3, h4, h5, h6 {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Polje pretrage ima svoje dugme za brisanje — nativni krstić je višak. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 /* Brojevna polja bez strelica */

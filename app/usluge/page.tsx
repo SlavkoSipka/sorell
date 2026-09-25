@@ -6,12 +6,21 @@ import { SITE } from '@/lib/site-config';
 import { formatRsd } from '@/lib/price';
 import { telHref } from '@/lib/order-status';
 import { getSalonData } from '@/lib/salon-server';
+import { metaDescription } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Usluge i cenovnik',
-  description: 'Tretmani lica i tela, depilacija — cenovnik i trajanje.',
-  alternates: { canonical: '/usluge' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  // Mesto i vrste usluga se čitaju iz admina (kartica Salon), pa opis prati izmene.
+  const { city, groups } = await getSalonData();
+  const mesto = city.replace(/^\d{5}\s*/, '').trim();
+  const vrste = [...new Set(groups.map((g) => g.title.trim()).filter(Boolean))].join(', ');
+  return {
+    title: 'Usluge i cenovnik salona',
+    description: metaDescription(
+      `Usluge i cenovnik salona Sorelle${mesto ? ` — ${mesto}` : ''}${vrste ? `: ${vrste}` : ''}. Cene, trajanje tretmana i zakazivanje termina telefonom.`,
+    ),
+    alternates: { canonical: '/usluge' },
+  };
+}
 
 export default async function UslugePage() {
   // Cenovnik, fotografija, naslov i telefon dolaze iz admina (kartica Salon).

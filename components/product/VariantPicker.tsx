@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCart } from '@/lib/cart-context';
 import {
   variantDisplayName,
@@ -32,6 +32,15 @@ export default function VariantPicker({
   pricedCodes: string[];
 }) {
   const { addItem } = useCart();
+  const [dodato, setDodato] = useState(false);
+  const dodatoTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (dodatoTimer.current) window.clearTimeout(dodatoTimer.current);
+    },
+    [],
+  );
   const { priceMap, productDiscountMap, siteDiscountPercent, inactiveVariants, loaded } =
     usePricingData();
 
@@ -70,6 +79,9 @@ export default function VariantPicker({
       price: String(basePrice),
       image,
     });
+    setDodato(true);
+    if (dodatoTimer.current) window.clearTimeout(dodatoTimer.current);
+    dodatoTimer.current = window.setTimeout(() => setDodato(false), 1600);
   };
 
   return (
@@ -150,7 +162,7 @@ export default function VariantPicker({
               disabled={!canBuy}
               className="w-full rounded-card border border-ink bg-ink px-6 py-3.5 font-body text-[12px] uppercase tracking-[0.14em] text-canvas transition-colors duration-200 hover:bg-canvas hover:text-ink disabled:cursor-not-allowed disabled:border-line disabled:bg-surface disabled:text-muted disabled:hover:bg-surface disabled:hover:text-muted"
             >
-              Dodaj u korpu
+              {dodato ? '✓ Dodato u korpu' : 'Dodaj u korpu'}
             </button>
             {loaded && visible.length === 0 ? (
               <p className="mt-2 font-body text-[13px] leading-relaxed text-muted">
