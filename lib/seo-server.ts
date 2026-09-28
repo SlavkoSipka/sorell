@@ -97,7 +97,7 @@ export async function getBusinessJsonLd() {
       addressCountry: 'RS',
     },
     areaServed: { '@type': 'Country', name: 'Srbija' },
-    paymentAccepted: 'Gotovina (pouzećem)',
+    paymentAccepted: 'Gotovina (pouzećem), uplata na račun',
   };
 }
 

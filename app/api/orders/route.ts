@@ -12,10 +12,29 @@ import {
 import { computePricing } from '@/lib/pricing-engine';
 import { shippingForProductsTotalRsd } from '@/lib/shipping';
 import { getSiteUrl } from '@/lib/site-url';
-import { firstCheckoutError, validateCheckout } from '@/lib/checkout-validation';
+import {
+  firstCheckoutError,
+  resolvedCompanyAddress,
+  validateCheckout,
+  type CheckoutFields,
+} from '@/lib/checkout-validation';
+import {
+  isTransferAvailable,
+  orderVatRate,
+  type CustomerType,
+  type PaymentMethod,
+} from '@/lib/payment';
+import { getPayee } from '@/lib/payment-server';
 import type { DbProduct, DbVariant } from '@/lib/price';
 
 type OrderBody = {
+  customerType?: string;
+  companyName?: string;
+  pib?: string;
+  mb?: string;
+  companyAddress?: string;
+  companySameAddress?: boolean;
+  paymentMethod?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -53,29 +72,44 @@ export async function POST(request: Request) {
   const municipality = typeof body.municipality === 'string' ? body.municipality.trim() : '';
   const postal = typeof body.postal === 'string' ? body.postal.trim() : '';
   const note = typeof body.note === 'string' && body.note.trim().length > 0 ? body.note.trim() : null;
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  // Stari klijent (keširana stranica) ne šalje ova polja: fizičko lice, pouzećem.
+  const customerType = (body.customerType === 'firma' ? 'firma' : 'fizicko') as CustomerType;
+  const paymentMethod = (body.paymentMethod === 'uplata' ? 'uplata' : 'pouzece') as PaymentMethod;
 
   if (!firstName || !lastName || !email || !phone || !address || !city || !municipality || !postal) {
     return NextResponse.json({ error: 'Popunite sva obavezna polja.' }, { status: 400 });
   }
 
+  const payee = await getPayee();
+  const fields: CheckoutFields = {
+    customerType,
+    companyName: customerType === 'firma' ? str(body.companyName) : '',
+    pib: customerType === 'firma' ? str(body.pib).replace(/s/g, '') : '',
+    mb: customerType === 'firma' ? str(body.mb).replace(/s/g, '') : '',
+    companyAddress: customerType === 'firma' ? str(body.companyAddress) : '',
+    companySameAddress: body.companySameAddress !== false,
+    firstName,
+    lastName,
+    phone,
+    email,
+    address,
+    addressExtra,
+    city,
+    municipality,
+    postal,
+    note: note ?? '',
+    paymentMethod,
+  };
+
   // Ista pravila kao u formi (lib/checkout-validation.ts) — server ne veruje pregledaču.
   const greska = firstCheckoutError(
-    validateCheckout({
-      firstName,
-      lastName,
-      phone,
-      email,
-      address,
-      addressExtra,
-      city,
-      municipality,
-      postal,
-      note: note ?? '',
-    }),
+    validateCheckout(fields, { transferAvailable: isTransferAvailable(payee) }),
   );
   if (greska) {
     return NextResponse.json({ error: greska }, { status: 400 });
   }
+  const companyAddress = resolvedCompanyAddress(fields);
 
   const admin = createAdminClient();
 
@@ -248,6 +282,14 @@ export async function POST(request: Request) {
       municipality,
       postal_code: postal,
       note,
+      customer_type: customerType,
+      company_name: fields.companyName,
+      company_pib: fields.pib,
+      company_mb: fields.mb,
+      company_address: companyAddress,
+      payment_method: paymentMethod,
+      // Stopa u trenutku porudžbine: potvrda ostaje ista i ako se podešavanje promeni.
+      vat_rate: orderVatRate(payee),
       line_items: lineItemsJson,
       subtotal_rsd: pricing.subtotalRsd,
       shipping_rsd: shippingRsd,
@@ -288,6 +330,13 @@ export async function POST(request: Request) {
         municipality,
         postal,
         note,
+        customerType,
+        companyName: fields.companyName,
+        companyPib: fields.pib,
+        companyMb: fields.mb,
+        companyAddress,
+        paymentMethod,
+        payee,
         promoCode: promoCodeStored,
         lineItems: lineItemsJson.map((li) => ({
           name: li.name,

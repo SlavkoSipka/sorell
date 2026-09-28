@@ -15,7 +15,7 @@ import type { OrderForPdf } from '@/lib/order-pdf';
 export const ORDER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const COLUMNS =
-  'order_number, created_at, customer_first_name, customer_last_name, customer_email, customer_phone, address_line, address_extra, city, municipality, postal_code, note, line_items, subtotal_rsd, shipping_rsd, promo_code, promo_discount_rsd, total_rsd';
+  'order_number, created_at, customer_first_name, customer_last_name, customer_email, customer_phone, address_line, address_extra, city, municipality, postal_code, note, line_items, subtotal_rsd, shipping_rsd, promo_code, promo_discount_rsd, total_rsd, customer_type, company_name, company_pib, company_mb, company_address, payment_method, vat_rate';
 
 /** null = ID nije ispravan, porudžbina ne postoji ili baza nije podešena. */
 export async function getOrderForReceipt(id: string): Promise<OrderForPdf | null> {

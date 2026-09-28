@@ -4,6 +4,8 @@ import { SITE } from '@/lib/site-config';
 import { formatRsd } from '@/lib/price';
 import { FREE_SHIPPING_THRESHOLD_RSD, SHIPPING_RSD } from '@/lib/shipping';
 import { getSalonData } from '@/lib/salon-server';
+import { getPayee } from '@/lib/payment-server';
+import { formatVatRate } from '@/lib/payment';
 import { DEFAULT_LEGAL } from '@/lib/legal-defaults';
 import type { LegalKind, LegalValues } from '@/lib/legal';
 
@@ -34,8 +36,23 @@ async function restGet<T>(path: string): Promise<T[] | null> {
 
 /** Vrednosti za oznake {telefon}, {adresa}… — iz istog mesta kao Kontakt i footer. */
 export async function getLegalValues(): Promise<LegalValues> {
-  const salon = await getSalonData();
+  const [salon, payee] = await Promise.all([getSalonData(), getPayee()]);
+  // Pravni podaci prodavca iz kartice Plaćanje: PIB i MB se dodaju tek kad su upisani.
+  const firma = [
+    payee.name,
+    [payee.address, payee.city].filter(Boolean).join(', '),
+    payee.pib ? `PIB ${payee.pib}` : '',
+    payee.mb ? `matični broj ${payee.mb}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const pdv =
+    payee.vatEnabled && payee.vatRate > 0
+      ? `Prodavac je u sistemu PDV-a. Sve cene su iskazane sa uračunatim PDV-om po stopi od ${formatVatRate(payee.vatRate)}%.`
+      : 'Prodavac nije u sistemu PDV-a, pa PDV nije obračunat.';
   return {
+    firma,
+    pdv,
     naziv: salon.title,
     adresa: salon.address,
     grad: salon.city,

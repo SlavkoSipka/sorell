@@ -25,6 +25,12 @@ const SECTIONS: { title: string; tabs: Tab[] }[] = [
         hint: 'Nove porudžbine i statusi',
         icon: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6',
       },
+      {
+        href: '/admin/placanje',
+        label: 'Plaćanje',
+        hint: 'Račun za uplate i podaci firme',
+        icon: 'M3 7h18v10H3zM3 11h18M7 15h3',
+      },
     ],
   },
   {

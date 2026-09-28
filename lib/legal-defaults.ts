@@ -12,7 +12,7 @@ Rukovalac podacima je {naziv}, {adresa}, {grad}.
 
 Kontakt za sva pitanja o podacima: **{email}**, telefon **{telefon}**.
 
-[Dopuniti: pun poslovni naziv, matični broj i PIB privrednog subjekta.]
+Pun poslovni naziv: {firma}.
 
 ## 2. Koje podatke prikupljamo i po kom osnovu
 
@@ -22,7 +22,7 @@ Kontakt za sva pitanja o podacima: **{email}**, telefon **{telefon}**.
 
 **Korpa.** Sadržaj korpe se čuva isključivo u memoriji tvog pregledača i ne šalje se nama dok ne pošalješ porudžbinu.
 
-Ne tražimo i ne čuvamo brojeve platnih kartica — plaćanje ide isključivo pouzećem, gotovinom kuriru pri preuzimanju.
+Ne tražimo i ne čuvamo brojeve platnih kartica. Plaća se pouzećem (gotovinom kuriru) ili uplatom na naš tekući račun. Kada poručuješ na firmu, čuvamo naziv firme, PIB, matični broj i adresu sedišta, jer su potrebni za račun.
 
 ## 3. Kome prosleđujemo podatke
 
@@ -71,13 +71,13 @@ export const DEFAULT_TERMS = `Ovi uslovi važe za kupovinu preko sajta {brend} i
 
 {naziv}, {adresa}, {grad}. Kontakt: {email}, telefon {telefon}.
 
-[Dopuniti: pun poslovni naziv, matični broj, PIB i podatak da li je prodavac u sistemu PDV-a.]
+Pun poslovni naziv: {firma}.
 
 ## 2. Cene
 
-Sve cene su iskazane u dinarima (RSD) i važe u trenutku slanja porudžbine. Cena prikazana uz proizvod ne uključuje troškove dostave — oni se prikazuju posebno pre potvrde porudžbine.
+Sve cene su iskazane u dinarima (RSD) i važe u trenutku slanja porudžbine. Cena prikazana uz proizvod ne uključuje troškove dostave, koji se prikazuju posebno pre potvrde porudžbine.
 
-[Dopuniti: „Cene su iskazane sa uračunatim PDV-om" ili „Prodavac nije u sistemu PDV-a", zavisno od statusa.]
+{pdv}
 
 ## 3. Poručivanje
 
@@ -85,7 +85,12 @@ Proizvod se dodaje u korpu, a porudžbina se šalje popunjavanjem podataka za do
 
 ## 4. Plaćanje
 
-Plaćanje je isključivo **pouzećem** — gotovinom kuriru prilikom preuzimanja pošiljke. Sajt ne prima podatke o platnim karticama i ne vrši onlajn naplatu.
+Plaćanje je moguće na dva načina:
+
+- **Pouzećem**: gotovinom kuriru prilikom preuzimanja pošiljke.
+- **Uplatom na tekući račun**: posle porudžbine dobijaš podatke za uplatu i IPS QR kod za aplikaciju banke. Pošiljku šaljemo kada uplata stigne na račun.
+
+Porudžbina može da glasi na fizičko lice ili na firmu (uz naziv, PIB i matični broj). Sajt ne prima podatke o platnim karticama i ne vrši onlajn naplatu karticom.
 
 ## 5. Dostava
 

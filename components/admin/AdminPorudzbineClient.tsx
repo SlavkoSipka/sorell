@@ -50,6 +50,15 @@ export type AdminOrderRow = {
   promo_discount_rsd?: number | string | null;
   status: string;
   created_at: string;
+  /** Migracija 0019: fizicko | firma, pouzece | uplata. */
+  customer_type?: string | null;
+  company_name?: string | null;
+  company_pib?: string | null;
+  company_mb?: string | null;
+  company_address?: string | null;
+  payment_method?: string | null;
+  /** Migracija 0020: stopa PDV-a u trenutku porudžbine (0 = nije u sistemu PDV-a). */
+  vat_rate?: number | string | null;
 };
 
 type Props = {
@@ -76,9 +85,52 @@ function brojPorudzbine(o: AdminOrderRow): string {
   return o.order_number != null && o.order_number !== '' ? String(o.order_number) : '—';
 }
 
+function jeFirma(o: AdminOrderRow): boolean {
+  return o.customer_type === 'firma' && Boolean(o.company_name);
+}
+
+/** Oznake ispod imena: firma i uplata na račun se vide bez otvaranja detalja. */
+function Oznake({ o }: { o: AdminOrderRow }) {
+  const firma = jeFirma(o);
+  const uplata = o.payment_method === 'uplata';
+  if (!firma && !uplata) return null;
+  const tag =
+    'inline-flex items-center rounded-card border px-1.5 py-0.5 font-body text-[10px] font-semibold uppercase tracking-[0.08em]';
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {firma ? <span className={`${tag} border-ink text-ink`}>Firma</span> : null}
+      {uplata ? (
+        <span className={`${tag} border-accent bg-accent-soft text-ink`} title="Plaća uplatom na račun">
+          Uplata na račun
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function OrderDetails({ o }: { o: AdminOrderRow }) {
   return (
     <div className="space-y-2 font-body text-[13px] text-muted">
+      {jeFirma(o) ? (
+        <p className="border-b border-line pb-2 text-ink">
+          <span className="font-semibold">{o.company_name}</span>
+          <br />
+          PIB <span className="tabular-nums">{o.company_pib}</span> · MB{' '}
+          <span className="tabular-nums">{o.company_mb}</span>
+          {o.company_address ? (
+            <>
+              <br />
+              Sedište: {o.company_address}
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      <p>
+        Plaćanje:{' '}
+        <span className="text-ink">
+          {o.payment_method === 'uplata' ? 'uplata na račun (paket šalji kad uplata stigne)' : 'pouzećem'}
+        </span>
+      </p>
       <p className="text-ink">
         {o.address_line}
         {o.address_extra ? `, ${o.address_extra}` : ''}
@@ -141,6 +193,17 @@ function OrderDetails({ o }: { o: AdminOrderRow }) {
         <p>
           Naplaćeno ukupno: <span className="text-ink">{formatAmount(Number(o.total_rsd))} RSD</span>
         </p>
+        {o.vat_rate != null && Number(o.vat_rate) > 0 ? (
+          <p>
+            PDV {Number(o.vat_rate)}% (uračunat):{' '}
+            <span className="text-ink">
+              {formatAmount(
+                Math.round(((Number(o.total_rsd) * Number(o.vat_rate)) / (100 + Number(o.vat_rate))) * 100) / 100,
+              )}{' '}
+              RSD
+            </span>
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -401,8 +464,9 @@ export default function AdminPorudzbineClient({
     <div>
       <h2 className="mb-2 font-display text-[22px] text-ink md:text-[26px]">Porudžbine</h2>
       <p className="mb-5 max-w-[720px] font-body text-[13px] leading-relaxed text-muted">
-        Plaćanje je <strong className="font-medium text-ink">pouzećem</strong>. Pretraga ide kroz celu
-        bazu — ime, telefon, email, adresa, grad, iznos, promo kod i nazivi proizvoda.
+        Kupac bira plaćanje <strong className="font-medium text-ink">pouzećem</strong> ili{' '}
+        <strong className="font-medium text-ink">uplatom na račun</strong>. Pretraga ide kroz celu
+        bazu: ime, firma, PIB, telefon, email, adresa, grad, iznos, promo kod i nazivi proizvoda.
         {!searchQuery && !allLoaded ? (
           <span className="mt-2 block">
             Prikazano poslednjih {orders.length}. Klikni {'„Učitaj sve porudžbine"'} za kompletan
@@ -420,7 +484,7 @@ export default function AdminPorudzbineClient({
           type="search"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Pretraga: ime, telefon, email, adresa, grad, iznos, proizvod…"
+          placeholder="Pretraga: ime, firma, PIB, telefon, email, adresa, iznos, proizvod…"
           className="min-h-[44px] w-full rounded-card border border-line bg-canvas px-3 py-2.5 font-body text-[16px] text-ink placeholder:text-muted focus:border-ink focus:outline-none sm:text-[14px]"
         />
         {isSearching ? <p className="font-body text-[13px] text-muted">Pretraga…</p> : null}
@@ -495,8 +559,14 @@ export default function AdminPorudzbineClient({
                   Br. {brojPorudzbine(o)}
                 </p>
                 <p className="text-ink">
-                  {o.customer_first_name} {o.customer_last_name}
+                  {jeFirma(o) ? o.company_name : `${o.customer_first_name} ${o.customer_last_name}`}
                 </p>
+                {jeFirma(o) ? (
+                  <p className="text-[12px] text-muted">
+                    {o.customer_first_name} {o.customer_last_name}
+                  </p>
+                ) : null}
+                <Oznake o={o} />
                 <p className="mt-0.5 text-[12px] tabular-nums text-muted">
                   {new Date(o.created_at).toLocaleString('sr-RS', {
                     dateStyle: 'short',
@@ -575,8 +645,20 @@ export default function AdminPorudzbineClient({
                     timeStyle: 'short',
                   })}
                 </td>
-                <td className="max-w-[140px] px-3 py-3 text-ink">
-                  {o.customer_first_name} {o.customer_last_name}
+                <td className="max-w-[160px] px-3 py-3 text-ink">
+                  {jeFirma(o) ? (
+                    <>
+                      <span className="font-semibold">{o.company_name}</span>
+                      <span className="block text-muted">
+                        {o.customer_first_name} {o.customer_last_name}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {o.customer_first_name} {o.customer_last_name}
+                    </>
+                  )}
+                  <Oznake o={o} />
                 </td>
                 <td className="max-w-[180px] break-words px-3 py-3 text-muted">
                   <a

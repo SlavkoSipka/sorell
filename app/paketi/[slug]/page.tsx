@@ -102,7 +102,7 @@ export default async function BundlePage({ params }: Params) {
             </div>
 
             <div className="mt-5 space-y-1 border-t border-line pt-5 font-body text-[13px] leading-relaxed text-muted">
-              <p>Plaćanje pouzećem pri preuzimanju.</p>
+              <p>Plaćanje pouzećem ili uplatom na račun.</p>
               <p>
                 Dostava {SHIPPING_CARRIER} — {formatRsd(SHIPPING_RSD)}. {FREE_SHIPPING_THRESHOLD_LABEL}.
               </p>

@@ -5,6 +5,15 @@ import path from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { formatRsd } from '@/lib/price';
+import {
+  formatVatRate,
+  splitVat,
+  transferRows,
+  type CustomerType,
+  type Payee,
+  type TransferDetails,
+  type VatSplit,
+} from '@/lib/payment';
 
 /**
  * PDF potvrda porudžbine.
@@ -37,17 +46,71 @@ export type OrderForPdf = {
   promo_code: string | null;
   promo_discount_rsd: number | string | null;
   total_rsd: number | string;
+  /** Kolone iz migracije 0019; starije porudžbine: fizičko lice, pouzećem. */
+  customer_type?: string | null;
+  company_name?: string | null;
+  company_pib?: string | null;
+  company_mb?: string | null;
+  company_address?: string | null;
+  payment_method?: string | null;
+  /** Migracija 0020: NULL = pre PDV izmene, 0 = prodavac nije u sistemu PDV-a. */
+  vat_rate?: number | string | null;
 };
 
 export type SellerForPdf = {
   brand: string;
-  title: string;
+  /** Pravni naziv prodavca (kako stoji u APR-u i banci). */
+  legalName: string;
   address: string;
   city: string;
+  pib: string;
+  mb: string;
   phone: string;
   email: string;
   website: string;
 };
+
+export function isCompanyOrder(order: OrderForPdf): boolean {
+  return order.customer_type === 'firma' && Boolean(order.company_name?.trim());
+}
+
+/**
+ * Podaci za uplatu za ovu porudžbinu; null kad se plaća pouzećem.
+ * Isti za zahvalnicu, PDF i QR kod, pa se nikad ne razlikuju.
+ */
+export function orderTransfer(order: OrderForPdf, payee: Payee): TransferDetails | null {
+  if (order.payment_method !== 'uplata') return null;
+  const firma = isCompanyOrder(order);
+  return {
+    payee,
+    amount: num(order.total_rsd),
+    orderNumber: orderNumberLabel(order.order_number),
+    customerType: (firma ? 'firma' : 'fizicko') as CustomerType,
+  };
+}
+
+/**
+ * PDV za potvrdu: split kad je prodavac bio u sistemu PDV-a, 'bez' kad nije,
+ * null za porudžbine pre ove izmene (na njima se PDV ne pominje).
+ */
+export function orderVat(order: OrderForPdf): VatSplit | 'bez' | null {
+  if (order.vat_rate == null || order.vat_rate === '') return null;
+  const rate = Number(order.vat_rate);
+  if (!Number.isFinite(rate)) return null;
+  if (rate <= 0) return 'bez';
+  return splitVat(num(order.total_rsd), rate);
+}
+
+/** Redovi PDV-a ispod ukupnog iznosa: isti tekst na PDF-u, zahvalnici i u mejlu. */
+export function vatLines(order: OrderForPdf): { label: string; value: string }[] {
+  const v = orderVat(order);
+  if (v === null) return [];
+  if (v === 'bez') return [{ label: 'Prodavac nije u sistemu PDV-a, PDV nije obračunat.', value: '' }];
+  return [
+    { label: 'Osnovica bez PDV-a', value: formatRsd(v.base) },
+    { label: `PDV ${formatVatRate(v.rate)}% (uračunat u cenu)`, value: formatRsd(v.vat) },
+  ];
+}
 
 export type OrderLine = { name: string; quantity: number; unit: number; total: number };
 
@@ -156,7 +219,11 @@ export function orderNumberLabel(n: number | string | null | undefined): string 
 
 // ── Crtanje ─────────────────────────────────────────────────────────
 
-export async function buildOrderPdf(order: OrderForPdf, seller: SellerForPdf): Promise<Uint8Array> {
+export async function buildOrderPdf(
+  order: OrderForPdf,
+  seller: SellerForPdf,
+  transfer?: { details: TransferDetails; qrPng: Uint8Array } | null,
+): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const fonts = await loadFonts();
@@ -164,7 +231,7 @@ export async function buildOrderPdf(order: OrderForPdf, seller: SellerForPdf): P
   const bold = await pdf.embedFont(fonts.bold, { subset: true });
 
   const broj = orderNumberLabel(order.order_number);
-  pdf.setTitle(`Potvrda porudžbine br. ${broj} — ${seller.brand}`);
+  pdf.setTitle(`Potvrda porudžbine br. ${broj} · ${seller.brand}`);
   pdf.setAuthor(seller.brand);
   pdf.setSubject('Potvrda porudžbine');
   pdf.setCreator(seller.brand);
@@ -208,7 +275,7 @@ export async function buildOrderPdf(order: OrderForPdf, seller: SellerForPdf): P
     if (y - needed >= MARGIN + 40) return;
     page = pdf.addPage([A4.w, A4.h]);
     y = A4.h - MARGIN;
-    text(`Potvrda porudžbine br. ${broj} — nastavak`, MARGIN, y, { size: 9, color: MUTED });
+    text(`Potvrda porudžbine br. ${broj} (nastavak)`, MARGIN, y, { size: 9, color: MUTED });
     y -= 24;
   };
 
@@ -226,6 +293,16 @@ export async function buildOrderPdf(order: OrderForPdf, seller: SellerForPdf): P
   const leftX = MARGIN;
   const rightX = MARGIN + colW + 24;
 
+  const firma = isCompanyOrder(order);
+  const kupacFirma = firma
+    ? [
+        order.company_name?.trim() ?? '',
+        order.company_pib ? `PIB ${order.company_pib}` : '',
+        order.company_mb ? `Matični broj ${order.company_mb}` : '',
+        order.company_address?.trim() ?? '',
+      ].filter(Boolean)
+    : [];
+
   const kupacAdresa = [
     `${order.customer_first_name} ${order.customer_last_name}`.trim(),
     order.address_line,
@@ -237,32 +314,32 @@ export async function buildOrderPdf(order: OrderForPdf, seller: SellerForPdf): P
   ].filter(Boolean);
 
   const prodavac = [
-    seller.title,
+    seller.legalName,
     seller.address,
     seller.city,
+    seller.pib ? `PIB ${seller.pib}` : '',
+    seller.mb ? `Matični broj ${seller.mb}` : '',
     seller.phone ? `Tel. ${seller.phone}` : '',
     seller.email,
   ].filter(Boolean);
 
-  text('PRODAVAC', leftX, y, { font: bold, size: 8, color: MUTED });
-  text('ADRESA ZA DOSTAVU', rightX, y, { font: bold, size: 8, color: MUTED });
-  y -= 16;
+  /** Blok sa naslovom; prvi red podebljan. Vraća y ispod poslednjeg reda. */
+  const blok = (naslov: string, redovi: string[], x: number, yy: number) => {
+    text(naslov, x, yy, { font: bold, size: 8, color: MUTED });
+    let yb = yy - 16;
+    redovi.forEach((line, i) => {
+      for (const w of wrap(line, i === 0 ? bold : regular, 10, colW)) {
+        text(w, x, yb, { font: i === 0 ? bold : regular, size: 10, color: i === 0 ? INK : SOFT });
+        yb -= 14;
+      }
+    });
+    return yb;
+  };
 
-  let yL = y;
-  prodavac.forEach((line, i) => {
-    for (const w of wrap(line, i === 0 ? bold : regular, 10, colW)) {
-      text(w, leftX, yL, { font: i === 0 ? bold : regular, size: 10, color: i === 0 ? INK : SOFT });
-      yL -= 14;
-    }
-  });
-
+  const yL = blok('PRODAVAC', prodavac, leftX, y);
   let yR = y;
-  kupacAdresa.forEach((line, i) => {
-    for (const w of wrap(line, i === 0 ? bold : regular, 10, colW)) {
-      text(w, rightX, yR, { font: i === 0 ? bold : regular, size: 10, color: i === 0 ? INK : SOFT });
-      yR -= 14;
-    }
-  });
+  if (firma) yR = blok('KUPAC', kupacFirma, rightX, yR) - 12;
+  yR = blok(firma ? 'DOSTAVA I KONTAKT' : 'ADRESA ZA DOSTAVU', kupacAdresa, rightX, yR);
 
   y = Math.min(yL, yR) - 18;
 
@@ -327,24 +404,90 @@ export async function buildOrderPdf(order: OrderForPdf, seller: SellerForPdf): P
   y -= 8;
   text('ZA PLAĆANJE', labelX, y, { font: bold, size: 11 });
   textRight(formatRsd(total), right - 8, y - 2, { font: bold, size: 15 });
-  y -= 34;
+  y -= 22;
+  const pdv = vatLines(order);
+  if (pdv.length > 0) {
+    ensure(pdv.length * 14 + 12);
+    for (const r of pdv) {
+      if (r.value) {
+        text(r.label, labelX, y, { size: 9, color: MUTED });
+        textRight(r.value, right - 8, y, { size: 9, color: SOFT });
+      } else {
+        textRight(r.label, right - 8, y, { size: 9, color: MUTED });
+      }
+      y -= 14;
+    }
+  }
+  y -= 12;
 
   // ── Plaćanje ──
-  ensure(70);
-  page.drawRectangle({
-    x: MARGIN,
-    y: y - 30,
-    width,
-    height: 46,
-    borderColor: LINE,
-    borderWidth: 0.75,
-    color: SURFACE,
-  });
-  text('NAČIN PLAĆANJA', MARGIN + 12, y, { font: bold, size: 8, color: MUTED });
-  text('Pouzećem — gotovinom kuriru pri preuzimanju pošiljke.', MARGIN + 12, y - 18, {
-    size: 10,
-  });
-  y -= 56;
+  if (transfer) {
+    // Uplata na račun: podaci za nalog levo, IPS QR desno.
+    const redovi = transferRows(transfer.details);
+    const qrSize = 118;
+    const labelW = 96;
+    const valueX = MARGIN + 12 + labelW;
+    const valueMax = right - qrSize - 28 - valueX;
+    const jaki = new Set(['Račun primaoca', 'Iznos', 'Poziv na broj']);
+    const visineRedova = redovi.map((r) => wrap(r.value, regular, 10, valueMax).length * 13 + 4);
+    const visina = Math.max(visineRedova.reduce((a, b) => a + b, 0) + 34, qrSize + 44);
+    ensure(visina + 40);
+
+    page.drawRectangle({
+      x: MARGIN,
+      y: y - visina + 14,
+      width,
+      height: visina,
+      borderColor: INK,
+      borderWidth: 0.75,
+      color: SURFACE,
+    });
+    text('UPLATA NA RAČUN', MARGIN + 12, y, { font: bold, size: 8, color: MUTED });
+
+    let yp = y - 20;
+    redovi.forEach((r, i) => {
+      text(r.label, MARGIN + 12, yp, { size: 9, color: MUTED });
+      wrap(r.value, regular, 10, valueMax).forEach((w, j) => {
+        text(w, valueX, yp - j * 13, { font: jaki.has(r.label) ? bold : regular, size: 10 });
+      });
+      yp -= visineRedova[i];
+    });
+
+    const qr = await pdf.embedPng(transfer.qrPng);
+    const qrX = right - qrSize - 12;
+    const qrY = y - qrSize - 2;
+    page.drawImage(qr, { x: qrX, y: qrY, width: qrSize, height: qrSize });
+    const opis = 'IPS QR · skeniraj u aplikaciji banke';
+    text(opis, qrX + (qrSize - regular.widthOfTextAtSize(opis, 7.5)) / 2, qrY - 11, {
+      size: 7.5,
+      color: MUTED,
+    });
+
+    y -= visina + 6;
+    const napomena =
+      'Paket šaljemo čim uplata stigne na račun. Poziv na broj prepiši tačno, po njemu povezujemo uplatu sa porudžbinom.';
+    for (const w of wrap(napomena, regular, 9, width)) {
+      text(w, MARGIN, y, { size: 9, color: SOFT });
+      y -= 13;
+    }
+    y -= 12;
+  } else {
+    ensure(70);
+    page.drawRectangle({
+      x: MARGIN,
+      y: y - 30,
+      width,
+      height: 46,
+      borderColor: LINE,
+      borderWidth: 0.75,
+      color: SURFACE,
+    });
+    text('NAČIN PLAĆANJA', MARGIN + 12, y, { font: bold, size: 8, color: MUTED });
+    text('Pouzećem: gotovinom kuriru pri preuzimanju pošiljke.', MARGIN + 12, y - 18, {
+      size: 10,
+    });
+    y -= 56;
+  }
 
   // ── Napomena kupca ──
   if (order.note && order.note.trim()) {

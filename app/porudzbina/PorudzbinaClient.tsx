@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Media from '@/components/ui/Media';
@@ -11,17 +11,25 @@ import { useCartPricing } from '@/lib/use-cart-pricing';
 import { formatRsd } from '@/lib/price';
 import { SHIPPING_CARRIER } from '@/lib/shipping';
 import {
+  CHECKOUT_FIELD_ORDER,
   firstCheckoutError,
   validateCheckout,
   type CheckoutErrors,
   type CheckoutFields,
 } from '@/lib/checkout-validation';
+import type { CustomerType, PaymentMethod } from '@/lib/payment';
 
 const fieldInput =
   'w-full rounded-card border bg-canvas px-4 py-3 font-body text-[16px] text-ink placeholder:text-muted focus:outline-none transition-colors';
 const fieldLabel = 'mb-1.5 block font-body text-[14px] font-semibold text-ink';
 
 const PRAZNO: CheckoutFields = {
+  customerType: 'fizicko',
+  companyName: '',
+  pib: '',
+  mb: '',
+  companyAddress: '',
+  companySameAddress: true,
   firstName: '',
   lastName: '',
   phone: '',
@@ -32,9 +40,58 @@ const PRAZNO: CheckoutFields = {
   municipality: '',
   postal: '',
   note: '',
+  paymentMethod: 'pouzece',
 };
 
-export default function PorudzbinaClient() {
+type TextKey = Exclude<keyof CheckoutFields, 'customerType' | 'paymentMethod' | 'companySameAddress'>;
+
+/** Kartica sa radio dugmetom: ceo okvir je klikabilan, na telefonu lako pogoditi prstom. */
+function Izbor({
+  name,
+  checked,
+  onSelect,
+  title,
+  children,
+  id,
+}: {
+  name: string;
+  checked: boolean;
+  onSelect: () => void;
+  title: string;
+  children?: ReactNode;
+  id?: string;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-3 rounded-card border px-4 py-4 transition-colors ${
+        checked ? 'border-ink bg-surface' : 'border-line-strong bg-canvas hover:border-ink'
+      }`}
+    >
+      <input
+        id={id}
+        type="radio"
+        name={name}
+        checked={checked}
+        onChange={onSelect}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden
+        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-ink peer-focus-visible:ring-2 peer-focus-visible:ring-ink peer-focus-visible:ring-offset-2"
+      >
+        {checked ? <span className="h-2.5 w-2.5 rounded-full bg-ink" /> : null}
+      </span>
+      <span className="min-w-0">
+        <span className="block font-body text-[15px] font-semibold text-ink">{title}</span>
+        {children ? (
+          <span className="mt-1 block font-body text-[14px] leading-relaxed text-ink-soft">{children}</span>
+        ) : null}
+      </span>
+    </label>
+  );
+}
+
+export default function PorudzbinaClient({ transferAvailable }: { transferAvailable: boolean }) {
   const router = useRouter();
   const { items, clearCart, promoCode } = useCart();
   const pricing = useCartPricing();
@@ -45,14 +102,16 @@ export default function PorudzbinaClient() {
   const [greske, setGreske] = useState<CheckoutErrors>({});
 
   const empty = items.length === 0;
+  const firma = polja.customerType === 'firma';
+  const uplata = polja.paymentMethod === 'uplata';
 
-  const postavi = (key: keyof CheckoutFields, value: string) => {
+  const postavi = <K extends keyof CheckoutFields>(key: K, value: CheckoutFields[K]) => {
     setPolja((prev) => ({ ...prev, [key]: value }));
     // Greška nestaje čim kupac počne da je ispravlja.
     if (greske[key]) setGreske((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  /** Stil polja — crveni okvir kad je greška, da se na telefonu vidi i bez čitanja. */
+  /** Stil polja: crveni okvir kad je greška, da se na telefonu vidi i bez čitanja. */
   const okvir = (key: keyof CheckoutFields) =>
     `${fieldInput} ${greske[key] ? 'border-danger' : 'border-line-strong focus:border-ink'}`;
 
@@ -68,16 +127,42 @@ export default function PorudzbinaClient() {
     'aria-describedby': greske[key] ? `greska-${key}` : undefined,
   });
 
+  /** Tekstualno polje sa labelom, greškom i pomoćnim tekstom. */
+  const polje = (
+    key: TextKey,
+    label: ReactNode,
+    props: React.InputHTMLAttributes<HTMLInputElement> & { hint?: string } = {},
+  ) => {
+    const { hint, ...rest } = props;
+    return (
+      <div>
+        <label className={fieldLabel} htmlFor={`checkout-${key}`}>
+          {label}
+        </label>
+        <input
+          id={`checkout-${key}`}
+          type="text"
+          value={polja[key]}
+          onChange={(e) => postavi(key, e.target.value)}
+          className={okvir(key)}
+          {...aria(key)}
+          {...rest}
+        />
+        {poruka(key) ?? (hint ? <p className="mt-1.5 font-body text-[13px] text-muted">{hint}</p> : null)}
+      </div>
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const nadjene = validateCheckout(polja);
+    const nadjene = validateCheckout(polja, { transferAvailable });
     if (firstCheckoutError(nadjene)) {
       setGreske(nadjene);
       setError('Proveri označena polja.');
-      // Na telefonu forma je duga — vodi kupca do prvog pogrešnog polja.
-      const prvo = (Object.keys(nadjene) as (keyof CheckoutFields)[]).find((k) => nadjene[k]);
+      // Na telefonu forma je duga: vodi kupca do prvog pogrešnog polja.
+      const prvo = CHECKOUT_FIELD_ORDER.find((k) => nadjene[k]);
       if (prvo) document.getElementById(`checkout-${prvo}`)?.focus();
       return;
     }
@@ -88,6 +173,13 @@ export default function PorudzbinaClient() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          customerType: polja.customerType,
+          companyName: firma ? polja.companyName.trim() : '',
+          pib: firma ? polja.pib.trim() : '',
+          mb: firma ? polja.mb.trim() : '',
+          companyAddress: firma && !polja.companySameAddress ? polja.companyAddress.trim() : '',
+          companySameAddress: polja.companySameAddress,
+          paymentMethod: polja.paymentMethod,
           firstName: polja.firstName.trim(),
           lastName: polja.lastName.trim(),
           email: polja.email.trim(),
@@ -141,6 +233,26 @@ export default function PorudzbinaClient() {
     );
   }
 
+  const tipKupca = (tip: CustomerType, naslov: string) => {
+    const sel = polja.customerType === tip;
+    return (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={sel}
+        id={tip === 'fizicko' ? 'checkout-customerType' : undefined}
+        onClick={() => postavi('customerType', tip)}
+        className={`min-h-[48px] flex-1 rounded-card border px-3 font-body text-[14px] font-semibold transition-colors ${
+          sel ? 'border-ink bg-ink text-canvas' : 'border-line-strong bg-canvas text-ink hover:border-ink'
+        }`}
+      >
+        {naslov}
+      </button>
+    );
+  };
+
+  const nacinPlacanja = (m: PaymentMethod) => () => postavi('paymentMethod', m);
+
   return (
     <main>
       <div className="mx-auto max-w-[1000px] px-5 py-12 md:px-8 md:py-16">
@@ -148,84 +260,90 @@ export default function PorudzbinaClient() {
 
         <div className="mt-8 grid gap-10 lg:grid-cols-[1fr_320px] lg:items-start">
           <form onSubmit={handleSubmit} noValidate className="order-2 space-y-8 lg:order-1">
+            {/* ── Fizičko lice ili firma ── */}
+            <fieldset className="space-y-3">
+              <legend className="font-display text-[22px] text-ink">Poručuješ kao</legend>
+              <div role="radiogroup" aria-label="Poručuješ kao" className="flex gap-2">
+                {tipKupca('fizicko', 'Fizičko lice')}
+                {tipKupca('firma', 'Firma')}
+              </div>
+              {firma ? (
+                <p className="font-body text-[13px] leading-relaxed text-muted">
+                  Račun glasi na firmu. Upiši podatke tačno kao u APR-u.
+                </p>
+              ) : null}
+            </fieldset>
+
+            {/* ── Podaci o firmi ── */}
+            {firma ? (
+              <fieldset className="space-y-4">
+                <legend className="font-display text-[22px] text-ink">Podaci o firmi</legend>
+
+                {polje('companyName', 'Naziv firme', {
+                  autoComplete: 'organization',
+                  placeholder: 'Salon Lepota DOO',
+                })}
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {polje('pib', 'PIB', {
+                    inputMode: 'numeric',
+                    maxLength: 9,
+                    placeholder: '9 cifara',
+                    onChange: (e) => postavi('pib', e.target.value.replace(/\D/g, '')),
+                  })}
+                  {polje('mb', 'Matični broj', {
+                    inputMode: 'numeric',
+                    maxLength: 8,
+                    placeholder: '8 cifara',
+                    onChange: (e) => postavi('mb', e.target.value.replace(/\D/g, '')),
+                  })}
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-3 font-body text-[14px] text-ink">
+                  <input
+                    type="checkbox"
+                    checked={polja.companySameAddress}
+                    onChange={(e) => postavi('companySameAddress', e.target.checked)}
+                    className="h-5 w-5 shrink-0 accent-[color:var(--color-ink)]"
+                  />
+                  Sedište firme je na adresi za dostavu
+                </label>
+
+                {!polja.companySameAddress
+                  ? polje('companyAddress', 'Adresa sedišta firme', {
+                      autoComplete: 'off',
+                      placeholder: 'Ulica i broj, poštanski broj i mesto',
+                    })
+                  : null}
+              </fieldset>
+            ) : null}
+
             {/* ── Kupac ── */}
             <fieldset className="space-y-4">
-              <legend className="font-display text-[22px] text-ink">Tvoji podaci</legend>
+              <legend className="font-display text-[22px] text-ink">
+                {firma ? 'Osoba za kontakt' : 'Tvoji podaci'}
+              </legend>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-firstName">
-                    Ime
-                  </label>
-                  <input
-                    id="checkout-firstName"
-                    type="text"
-                    value={polja.firstName}
-                    onChange={(e) => postavi('firstName', e.target.value)}
-                    autoComplete="given-name"
-                    className={okvir('firstName')}
-                    {...aria('firstName')}
-                  />
-                  {poruka('firstName')}
-                </div>
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-lastName">
-                    Prezime
-                  </label>
-                  <input
-                    id="checkout-lastName"
-                    type="text"
-                    value={polja.lastName}
-                    onChange={(e) => postavi('lastName', e.target.value)}
-                    autoComplete="family-name"
-                    className={okvir('lastName')}
-                    {...aria('lastName')}
-                  />
-                  {poruka('lastName')}
-                </div>
+                {polje('firstName', 'Ime', { autoComplete: 'given-name' })}
+                {polje('lastName', 'Prezime', { autoComplete: 'family-name' })}
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-phone">
-                    Broj telefona
-                  </label>
-                  <input
-                    id="checkout-phone"
-                    type="tel"
-                    inputMode="tel"
-                    value={polja.phone}
-                    onChange={(e) => postavi('phone', e.target.value)}
-                    autoComplete="tel"
-                    className={okvir('phone')}
-                    placeholder="064 123 4567"
-                    {...aria('phone')}
-                  />
-                  {poruka('phone') ?? (
-                    <p className="mt-1.5 font-body text-[13px] text-muted">Kurir zove pre dostave.</p>
-                  )}
-                </div>
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-email">
-                    Email
-                  </label>
-                  <input
-                    id="checkout-email"
-                    type="email"
-                    inputMode="email"
-                    value={polja.email}
-                    onChange={(e) => postavi('email', e.target.value)}
-                    autoComplete="email"
-                    className={okvir('email')}
-                    placeholder="ime@primer.rs"
-                    {...aria('email')}
-                  />
-                  {poruka('email') ?? (
-                    <p className="mt-1.5 font-body text-[13px] text-muted">
-                      Ovde stiže potvrda porudžbine.
-                    </p>
-                  )}
-                </div>
+                {polje('phone', 'Broj telefona', {
+                  type: 'tel',
+                  inputMode: 'tel',
+                  autoComplete: 'tel',
+                  placeholder: '064 123 4567',
+                  hint: 'Kurir zove pre dostave.',
+                })}
+                {polje('email', 'Email', {
+                  type: 'email',
+                  inputMode: 'email',
+                  autoComplete: 'email',
+                  placeholder: 'ime@primer.rs',
+                  hint: 'Ovde stiže potvrda porudžbine.',
+                })}
               </div>
             </fieldset>
 
@@ -239,92 +357,32 @@ export default function PorudzbinaClient() {
               </p>
 
               <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-address">
-                    Ulica i kućni broj
-                  </label>
-                  <input
-                    id="checkout-address"
-                    type="text"
-                    value={polja.address}
-                    onChange={(e) => postavi('address', e.target.value)}
-                    autoComplete="address-line1"
-                    className={okvir('address')}
-                    placeholder="Knez Mihailova 12"
-                    {...aria('address')}
-                  />
-                  {poruka('address')}
-                </div>
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-addressExtra">
-                    Sprat, stan, ulaz{' '}
-                    <span className="font-normal text-muted">(opciono)</span>
-                  </label>
-                  <input
-                    id="checkout-addressExtra"
-                    type="text"
-                    value={polja.addressExtra}
-                    onChange={(e) => postavi('addressExtra', e.target.value)}
-                    autoComplete="address-line2"
-                    className={okvir('addressExtra')}
-                    placeholder="3. sprat, stan 8"
-                    {...aria('addressExtra')}
-                  />
-                  {poruka('addressExtra')}
-                </div>
+                {polje('address', 'Ulica i kućni broj', {
+                  autoComplete: 'address-line1',
+                  placeholder: 'Knez Mihailova 12',
+                })}
+                {polje(
+                  'addressExtra',
+                  <>
+                    Sprat, stan, ulaz <span className="font-normal text-muted">(opciono)</span>
+                  </>,
+                  { autoComplete: 'address-line2', placeholder: '3. sprat, stan 8' },
+                )}
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-city">
-                    Mesto
-                  </label>
-                  <input
-                    id="checkout-city"
-                    type="text"
-                    value={polja.city}
-                    onChange={(e) => postavi('city', e.target.value)}
-                    autoComplete="address-level2"
-                    className={okvir('city')}
-                    placeholder="Beograd"
-                    {...aria('city')}
-                  />
-                  {poruka('city')}
-                </div>
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-municipality">
-                    Opština
-                  </label>
-                  <input
-                    id="checkout-municipality"
-                    type="text"
-                    value={polja.municipality}
-                    onChange={(e) => postavi('municipality', e.target.value)}
-                    autoComplete="address-level3"
-                    className={okvir('municipality')}
-                    placeholder="Zvezdara"
-                    {...aria('municipality')}
-                  />
-                  {poruka('municipality')}
-                </div>
-                <div>
-                  <label className={fieldLabel} htmlFor="checkout-postal">
-                    Poštanski broj
-                  </label>
-                  <input
-                    id="checkout-postal"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={5}
-                    value={polja.postal}
-                    onChange={(e) => postavi('postal', e.target.value.replace(/\D/g, ''))}
-                    autoComplete="postal-code"
-                    className={okvir('postal')}
-                    placeholder="11000"
-                    {...aria('postal')}
-                  />
-                  {poruka('postal')}
-                </div>
+                {polje('city', 'Mesto', { autoComplete: 'address-level2', placeholder: 'Beograd' })}
+                {polje('municipality', 'Opština', {
+                  autoComplete: 'address-level3',
+                  placeholder: 'Zvezdara',
+                })}
+                {polje('postal', 'Poštanski broj', {
+                  inputMode: 'numeric',
+                  maxLength: 5,
+                  autoComplete: 'postal-code',
+                  placeholder: '11000',
+                  onChange: (e) => postavi('postal', e.target.value.replace(/\D/g, '')),
+                })}
               </div>
 
               <div>
@@ -347,21 +405,30 @@ export default function PorudzbinaClient() {
             {/* ── Plaćanje ── */}
             <fieldset>
               <legend className="font-display text-[22px] text-ink">Način plaćanja</legend>
-              <div className="mt-3 flex items-start gap-3 rounded-card border border-ink bg-surface px-4 py-4">
-                <span
-                  aria-hidden
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-ink"
+              <div className="mt-3 space-y-2" role="radiogroup" aria-label="Način plaćanja">
+                <Izbor
+                  id="checkout-paymentMethod"
+                  name="paymentMethod"
+                  checked={polja.paymentMethod === 'pouzece'}
+                  onSelect={nacinPlacanja('pouzece')}
+                  title="Pouzećem"
                 >
-                  <span className="h-2.5 w-2.5 rounded-full bg-ink" />
-                </span>
-                <div>
-                  <p className="font-body text-[15px] font-semibold text-ink">Plaćanje pouzećem</p>
-                  <p className="mt-1 font-body text-[14px] leading-relaxed text-ink-soft">
-                    Iznos plaćaš gotovinom kuriru kada preuzmeš paket. Online plaćanje karticom nije
-                    dostupno.
-                  </p>
-                </div>
+                  Plaćaš gotovinom kuriru kada preuzmeš paket.
+                </Izbor>
+                {transferAvailable ? (
+                  <Izbor
+                    name="paymentMethod"
+                    checked={uplata}
+                    onSelect={nacinPlacanja('uplata')}
+                    title="Uplata na račun"
+                  >
+                    Posle porudžbine dobijaš podatke za uplatu i IPS QR kod za aplikaciju banke.
+                    Paket šaljemo kad uplata stigne na račun.
+                  </Izbor>
+                ) : null}
               </div>
+              {poruka('paymentMethod')}
+              <p className="mt-2 font-body text-[13px] text-muted">Plaćanje karticom na sajtu nije dostupno.</p>
             </fieldset>
 
             <PromoCodeField />
@@ -379,7 +446,7 @@ export default function PorudzbinaClient() {
             >
               {loading
                 ? 'Šaljem porudžbinu…'
-                : `Poruči — ${formatRsd(pricing.totalRsd)} pouzećem`}
+                : `Poruči · ${formatRsd(pricing.totalRsd)}${uplata ? '' : ' pouzećem'}`}
             </button>
 
             <p className="font-body text-[13px] leading-relaxed text-muted">
@@ -387,7 +454,10 @@ export default function PorudzbinaClient() {
               <Link href="/uslovi-koriscenja" className="text-ink underline underline-offset-2">
                 uslove prodaje
               </Link>
-              . Potvrda porudžbine u PDF-u stiže odmah na sledećoj stranici i na tvoj email.
+              .{' '}
+              {uplata
+                ? 'Podaci za uplatu i QR kod stižu odmah na sledećoj stranici, zajedno sa potvrdom u PDF-u.'
+                : 'Potvrda porudžbine u PDF-u stiže odmah na sledećoj stranici i na tvoj email.'}
             </p>
           </form>
 

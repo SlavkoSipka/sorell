@@ -34,6 +34,8 @@ export const LEGAL_PLACEHOLDERS: { key: string; opis: string }[] = [
   { key: 'brend', opis: 'naziv sajta' },
   { key: 'postarina', opis: 'cena poštarine' },
   { key: 'besplatno_od', opis: 'prag za besplatnu dostavu' },
+  { key: 'firma', opis: 'pun poslovni naziv, sedište, PIB i MB (kartica Plaćanje)' },
+  { key: 'pdv', opis: 'rečenica o PDV-u (kartica Plaćanje)' },
 ];
 
 /** {telefon} → 069…; nepoznata oznaka ostaje kako je napisana, da se vidi greška. */

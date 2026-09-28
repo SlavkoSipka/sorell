@@ -1,6 +1,16 @@
 import emailjs, { EmailJSResponseStatus } from '@emailjs/nodejs';
 import { formatRsd } from '@/lib/price';
 import { SITE } from '@/lib/site-config';
+import {
+  PAYMENT_LABELS,
+  formatVatRate,
+  orderVatRate,
+  splitVat,
+  transferRows,
+  type CustomerType,
+  type Payee,
+  type PaymentMethod,
+} from '@/lib/payment';
 
 /**
  * Javni ključ, servis i šablon nisu tajne — javni ključ je po EmailJS-u
@@ -45,6 +55,13 @@ export type OrderEmailPayload = {
   municipality: string;
   postal: string;
   note: string | null;
+  customerType: CustomerType;
+  companyName: string;
+  companyPib: string;
+  companyMb: string;
+  companyAddress: string;
+  paymentMethod: PaymentMethod;
+  payee: Payee;
   promoCode: string | null;
   lineItems: Array<{ name: string; quantity: number; lineTotalRsd: number }>;
   subtotalRsd: number;
@@ -85,6 +102,7 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
   const {
     orderId, orderNumber, receiptUrl, firstName, lastName, email, phone, address, addressExtra,
     city, municipality, postal, note,
+    customerType, companyName, companyPib, companyMb, companyAddress, paymentMethod, payee,
     promoCode, lineItems, subtotalRsd, shippingRsd, totalRsd,
     discountType, discountPercent, discountAmountRsd,
     promoDiscountPercent, promoDiscountRsd,
@@ -107,12 +125,44 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
   const discount_line =
     discountType && discountPercent > 0
       ? `${discountType === 'bundle' ? 'Paket popust' : 'Popust'} −${discountPercent}% (−${formatRsd(discountAmountRsd)})`
-      : '—';
+      : 'nema';
 
   const promo_line =
     promoDiscountPercent > 0
       ? `Promo kod ${promoCode ?? ''} −${promoDiscountPercent}% (−${formatRsd(promoDiscountRsd)})`
-      : '—';
+      : 'nema';
+
+  const box =
+    'background:#faf9f7;border:1px solid #e7e4df;padding:16px 18px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#171614;';
+  const naslov =
+    'margin:0 0 10px 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;color:#6e6a63;';
+
+  // Firma: naziv, PIB, MB i sedište, za račun na firmu.
+  const company_html =
+    customerType === 'firma'
+      ? `<div style="padding-top:24px;"><p style="${naslov}">Porudžbina na firmu</p><div style="${box}"><strong>${escapeHtml(companyName)}</strong><br>PIB: <strong>${escapeHtml(companyPib)}</strong><br>Matični broj: ${escapeHtml(companyMb)}<br>Sedište: ${escapeHtml(companyAddress)}</div></div>`
+      : '';
+
+  // Uplata na račun: podaci po kojima kupac plaća, da se uplata lako upari.
+  const payment_html =
+    paymentMethod === 'uplata'
+      ? `<div style="padding-top:24px;"><p style="${naslov}">Uplata na račun</p><div style="${box}">${transferRows({
+          payee,
+          amount: totalRsd,
+          orderNumber: orderNumber || orderId.slice(0, 8),
+          customerType,
+        })
+          .filter((r) => r.label !== 'Primalac' && r.label !== 'Banka')
+          .map((r) => `${escapeHtml(r.label)}: <strong>${escapeHtml(r.value)}</strong>`)
+          .join('<br>')}<br><span style="color:#6e6a63;font-size:13px;">Paket se šalje kad uplata stigne na račun.</span></div></div>`
+      : '';
+
+  // PDV uračunat u cenu (ili napomena da prodavac nije u sistemu PDV-a).
+  const stopa = orderVatRate(payee);
+  const pdv = stopa > 0 ? splitVat(totalRsd, stopa) : null;
+  const vat_line = pdv
+    ? `PDV ${formatVatRate(pdv.rate)}% uračunat: ${formatRsd(pdv.vat)} (osnovica ${formatRsd(pdv.base)})`
+    : 'Prodavac nije u sistemu PDV-a, PDV nije obračunat.';
 
   const template_params: Record<string, string> = {
     order_id: orderId,
@@ -123,7 +173,7 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
     // tel: link — na telefonu jedan dodir zove kupca.
     customer_phone_href: 'tel:' + phone.replace(/[^\d+]/g, ''),
     municipality,
-    address_extra: addressExtra || '—',
+    address_extra: addressExtra || '',
     customer_first_name: firstName,
     customer_last_name: lastName,
     customer_full_name: `${firstName} ${lastName}`.trim(),
@@ -140,8 +190,8 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
     ]
       .filter(Boolean)
       .join(', '),
-    note: note && note.length > 0 ? note : '—',
-    promo_code: promoCode && promoCode.length > 0 ? promoCode : '—',
+    note: note && note.length > 0 ? note : 'nema',
+    promo_code: promoCode && promoCode.length > 0 ? promoCode : 'nema',
     line_items_text,
     line_items_html,
     subtotal_rsd: formatRsd(subtotalRsd),
@@ -151,6 +201,13 @@ export async function sendOrderNotificationEmail(payload: OrderEmailPayload): Pr
     total_rsd: formatRsd(totalRsd),
     order_date: new Date().toLocaleString('sr-RS', { dateStyle: 'medium', timeStyle: 'short' }),
     site_name: SITE.brandName,
+    customer_type_label: customerType === 'firma' ? 'Firma' : 'Fizičko lice',
+    company_name: companyName || '',
+    company_html,
+    payment_label: PAYMENT_LABELS[paymentMethod],
+    total_label: paymentMethod === 'uplata' ? 'Za uplatu na račun' : 'Za naplatu pouzećem',
+    payment_html,
+    vat_line,
   };
 
   try {

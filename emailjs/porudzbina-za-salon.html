@@ -27,7 +27,10 @@
               <p style="margin:0;font-size:13px;color:#6e6a63;">{{order_date}}</p>
               <p style="margin:6px 0 0 0;font-size:26px;font-weight:bold;color:#171614;">Porudžbina br. {{order_number}}</p>
               <p style="margin:10px 0 0 0;font-size:15px;color:#4b4843;">
-                Za naplatu pouzećem: <strong style="color:#171614;font-size:18px;">{{total_rsd}}</strong>
+                {{total_label}}: <strong style="color:#171614;font-size:18px;">{{total_rsd}}</strong>
+              </p>
+              <p style="margin:6px 0 0 0;font-size:13px;color:#6e6a63;">
+                {{customer_type_label}} · Plaćanje: <strong style="color:#171614;">{{payment_label}}</strong>
               </p>
             </td>
           </tr>
@@ -47,6 +50,16 @@
                 </tr>
               </table>
             </td>
+          </tr>
+
+          <!-- Firma (prazno za fizička lica) -->
+          <tr>
+            <td style="padding:0 32px;">{{{company_html}}}</td>
+          </tr>
+
+          <!-- Uplata na račun (prazno za pouzeće) -->
+          <tr>
+            <td style="padding:0 32px;">{{{payment_html}}}</td>
           </tr>
 
           <!-- Kupac i adresa -->
@@ -88,8 +101,11 @@
                 <tr><td style="padding:4px 0;">Promo kod</td><td align="right" style="padding:4px 0;color:#171614;">{{promo_line}}</td></tr>
                 <tr><td style="padding:4px 0;">Poštarina</td><td align="right" style="padding:4px 0;color:#171614;">{{shipping_rsd}}</td></tr>
                 <tr>
-                  <td style="padding:12px 0 4px 0;border-top:1px solid #171614;font-weight:bold;color:#171614;">ZA NAPLATU POUZEĆEM</td>
+                  <td style="padding:12px 0 4px 0;border-top:1px solid #171614;font-weight:bold;color:#171614;text-transform:uppercase;">{{total_label}}</td>
                   <td align="right" style="padding:12px 0 4px 0;border-top:1px solid #171614;font-size:18px;font-weight:bold;color:#171614;">{{total_rsd}}</td>
+                </tr>
+                <tr>
+                  <td colspan="2" align="right" style="padding:2px 0 4px 0;font-size:12px;color:#6e6a63;">{{vat_line}}</td>
                 </tr>
               </table>
             </td>
@@ -106,7 +122,7 @@
           <!-- Podnožje -->
           <tr>
             <td style="padding:28px 32px 28px 32px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#6e6a63;">
-              Plaćanje pouzećem — kupac plaća kuriru pri preuzimanju. Odgovor na ovaj mejl ide direktno kupcu.<br>
+              Način plaćanja: {{payment_label}}. Odgovor na ovaj mejl ide direktno kupcu.<br>
               Poslato automatski sa sajta {{site_name}}.
             </td>
           </tr>

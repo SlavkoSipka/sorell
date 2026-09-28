@@ -11,4 +11,4 @@ export const ORDER_LIST_PAGE_SIZE = 200;
 export const ORDER_SEARCH_LIMIT = 500;
 
 export const ORDER_LIST_COLUMNS =
-  'id, order_number, customer_first_name, customer_last_name, customer_email, customer_phone, address_line, address_extra, city, municipality, postal_code, note, admin_notes, line_items, total_rsd, subtotal_rsd, shipping_rsd, discount_type, discount_percent, promo_code, promo_discount_percent, promo_discount_rsd, status, created_at';
+  'id, order_number, customer_first_name, customer_last_name, customer_email, customer_phone, address_line, address_extra, city, municipality, postal_code, note, admin_notes, line_items, total_rsd, subtotal_rsd, shipping_rsd, discount_type, discount_percent, promo_code, promo_discount_percent, promo_discount_rsd, status, created_at, customer_type, company_name, company_pib, company_mb, company_address, payment_method, vat_rate';

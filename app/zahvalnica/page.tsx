@@ -5,7 +5,19 @@ import { telHref } from '@/lib/order-status';
 import { formatRsd } from '@/lib/price';
 import { getSalonData } from '@/lib/salon-server';
 import { getOrderForReceipt } from '@/lib/order-receipt-server';
-import { orderDate, orderNumberLabel, orderTotals, parseLines } from '@/lib/order-pdf';
+import {
+  isCompanyOrder,
+  orderDate,
+  orderNumberLabel,
+  orderTotals,
+  orderTransfer,
+  parseLines,
+  vatLines,
+} from '@/lib/order-pdf';
+import { ipsQrPayload, transferRows } from '@/lib/payment';
+import { getPayee } from '@/lib/payment-server';
+import { qrSvg } from '@/lib/payment-qr';
+import CopyButton from '@/components/ui/CopyButton';
 
 export const metadata: Metadata = {
   title: 'Hvala na porudžbini',
@@ -33,10 +45,16 @@ export default async function ZahvalnicaPage({
   searchParams: Promise<{ id?: string; br?: string }>;
 }) {
   const { id } = await searchParams;
-  const [{ phone }, order] = await Promise.all([
+  const [{ phone }, order, payee] = await Promise.all([
     getSalonData(),
     id ? getOrderForReceipt(id) : Promise.resolve(null),
+    getPayee(),
   ]);
+
+  // Uplata na račun: podaci za nalog i IPS QR kod (isti kao u PDF-u).
+  const transfer = order ? orderTransfer(order, payee) : null;
+  const qr = transfer ? await qrSvg(ipsQrPayload(transfer)) : null;
+  const firma = order ? isCompanyOrder(order) : false;
 
   const pdf = order && id ? `/api/porudzbine/${id}/potvrda` : null;
   const broj = order ? orderNumberLabel(order.order_number) : null;
@@ -56,13 +74,61 @@ export default async function ZahvalnicaPage({
             Hvala na porudžbini
           </h1>
           <p className="mx-auto mt-2 max-w-[420px] font-body text-[14px] leading-relaxed text-ink-soft">
-            Kontaktiramo te pre slanja. Plaćanje je pouzećem, kuriru pri preuzimanju.
+            {transfer
+              ? 'Porudžbina je primljena. Uplati iznos po podacima ispod, a paket šaljemo čim uplata stigne.'
+              : 'Kontaktiramo te pre slanja. Plaćanje je pouzećem, kuriru pri preuzimanju.'}
           </p>
         </div>
 
+        {transfer && qr ? (
+          <section
+            aria-label="Podaci za uplatu"
+            className="mt-7 border border-ink bg-canvas px-4 py-5 font-body text-[14px] md:px-6 md:py-6"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Uplata na račun</p>
+            <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:items-start sm:gap-5">
+              <div
+                className="w-[200px] shrink-0 border border-line bg-white p-1 [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
+                role="img"
+                aria-label="IPS QR kod za uplatu"
+                dangerouslySetInnerHTML={{ __html: qr }}
+              />
+              <p className="text-center text-[13px] leading-relaxed text-ink-soft sm:text-left">
+                <span className="font-semibold text-ink">Skeniraj QR kod</span> u aplikaciji svoje banke
+                (opcija IPS skeniraj) i nalog se popuni sam.
+                <span className="mt-2 block">
+                  Poručuješ sa telefona? Sačuvaj screenshot, pa u aplikaciji banke izaberi učitavanje QR
+                  koda iz galerije. Možeš i da prepišeš podatke ispod.
+                </span>
+              </p>
+            </div>
+
+            <dl className="mt-4 border-t border-line">
+              {transferRows(transfer).map((r) => (
+                <div key={r.label} className="flex items-center justify-between gap-3 border-b border-line py-2">
+                  <div className="min-w-0">
+                    <dt className="text-[12px] text-muted">{r.label}</dt>
+                    <dd
+                      className={`break-words text-ink ${
+                        r.copy && r.label !== 'Svrha uplate' ? 'font-semibold tabular-nums' : ''
+                      }`}
+                    >
+                      {r.value}
+                    </dd>
+                  </div>
+                  {r.copy ? <CopyButton value={r.copy} label={r.label} /> : null}
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3 text-[13px] leading-relaxed text-ink-soft">
+              Poziv na broj prepiši tačno, po njemu povezujemo uplatu sa porudžbinom.
+            </p>
+          </section>
+        ) : null}
+
         {order && iznosi ? (
           <>
-            {/* Potvrda — složena da stane u jedan screenshot na telefonu. */}
+            {/* Potvrda: složena da stane u jedan screenshot na telefonu. */}
             <section
               aria-label={`Potvrda porudžbine broj ${broj}`}
               className="mt-7 border border-ink bg-canvas px-4 py-5 font-body text-[14px] md:px-6 md:py-6"
@@ -84,9 +150,28 @@ export default async function ZahvalnicaPage({
                 </div>
               </div>
 
+              {firma ? (
+                <div className="border-b border-line py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Kupac</p>
+                  <p className="mt-1.5 leading-relaxed text-ink">
+                    <span className="font-semibold">{order.company_name}</span>
+                    <br />
+                    <span className="tabular-nums">PIB {order.company_pib}</span>
+                    {' · '}
+                    <span className="tabular-nums">MB {order.company_mb}</span>
+                    {order.company_address ? (
+                      <>
+                        <br />
+                        {order.company_address}
+                      </>
+                    ) : null}
+                  </p>
+                </div>
+              ) : null}
+
               <div className="border-b border-line py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
-                  Adresa za dostavu
+                  {firma ? 'Dostava i kontakt' : 'Adresa za dostavu'}
                 </p>
                 <p className="mt-1.5 leading-relaxed text-ink">
                   <span className="font-semibold">
@@ -133,11 +218,26 @@ export default async function ZahvalnicaPage({
                 <div className="mt-2 border-t border-ink pt-2">
                   <Red label="Za plaćanje" value={formatRsd(iznosi.total)} strong />
                 </div>
+                {vatLines(order).map((r) => (
+                  <p key={r.label} className="flex justify-between gap-4 pt-1 text-[12px] text-muted">
+                    <span>{r.label}</span>
+                    {r.value ? <span className="tabular-nums">{r.value}</span> : null}
+                  </p>
+                ))}
               </div>
 
               <p className="bg-surface px-3 py-2.5 text-[13px] text-ink">
-                <span className="font-semibold">Plaćanje pouzećem</span> — gotovinom kuriru pri
-                preuzimanju paketa.
+                {transfer ? (
+                  <>
+                    <span className="font-semibold">Uplata na račun</span>: paket šaljemo kad uplata
+                    stigne.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Plaćanje pouzećem</span>: gotovinom kuriru pri
+                    preuzimanju paketa.
+                  </>
+                )}
               </p>
 
               {order.note ? (
